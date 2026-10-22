@@ -1,6 +1,6 @@
 /*
    AngelCode Scripting Library
-   Copyright (c) 2003-2015 Andreas Jonsson
+   Copyright (c) 2003-2018 Andreas Jonsson
 
    This software is provided 'as-is', without any express or implied 
    warranty. In no event will the authors be held liable for any 
@@ -66,7 +66,11 @@ public:
 
 	asCScriptEngine *engine;
 
-//protected:
+	// Callback for when circular reference are detected
+	asCIRCULARREFFUNC_t circularRefDetectCallbackFunc;
+	void *              circularRefDetectCallbackParam;
+
+public: // SR2: was protected, the game inspects the object lists for diagnostics
 	struct asSObjTypePair {void *obj; asCObjectType *type; asUINT seqNbr;};
 	struct asSIntTypePair {int i; asCObjectType *type;};
 	typedef asSMapNode<void*, asSIntTypePair> asSMapNode_t;

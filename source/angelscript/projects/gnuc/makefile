@@ -53,7 +53,7 @@ endif
 ifeq ($(origin AR), default)
 	AR = gcc-ar
 endif
-RANLIB = gcc-ranlib
+RANLIB ?= gcc-ranlib
 DELETER = rm -f
 COPIER = cp -a
 
@@ -63,9 +63,11 @@ SRCNAMES = \
   as_bytecode.cpp \
   as_callfunc.cpp \
   as_callfunc_arm.cpp \
+  as_callfunc_arm64.cpp \
   as_callfunc_mips.cpp \
   as_callfunc_ppc.cpp \
   as_callfunc_ppc_64.cpp \
+  as_callfunc_riscv64.cpp \
   as_callfunc_sh4.cpp \
   as_callfunc_x86.cpp \
   as_callfunc_x64_gcc.cpp \
@@ -102,6 +104,13 @@ ifeq ($(TARGETPLATFORM), iphone)
 	OBJ += $(OBJDIR)/as_callfunc_arm_xcode.o
 else ifeq ($(TARGETPLATFORM), android)
 	OBJ += $(OBJDIR)/as_callfunc_arm_gcc.o
+else ifeq ($(shell uname), Darwin)
+ifeq ($(shell uname -m), arm64)
+	# Native calling conventions on Apple Silicon need the arm64 call stubs
+	OBJ += $(OBJDIR)/as_callfunc_arm64_xcode.o
+endif
+else ifeq ($(shell uname -m), aarch64)
+	OBJ += $(OBJDIR)/as_callfunc_arm64_gcc.o
 endif
 
 all: $(BIN)

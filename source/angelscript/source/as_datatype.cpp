@@ -1,6 +1,6 @@
 /*
    AngelCode Scripting Library
-   Copyright (c) 2003-2015 Andreas Jonsson
+   Copyright (c) 2003-2024 Andreas Jonsson
 
    This software is provided 'as-is', without any express or implied 
    warranty. In no event will the authors be held liable for any 
@@ -55,6 +55,7 @@ asCDataType::asCDataType()
 	isObjectHandle         = false;
 	isConstHandle          = false;
 	isHandleToAsHandleType = false;
+	ifHandleThenConst      = false;
 }
 
 asCDataType::asCDataType(const asCDataType &dt)
@@ -67,6 +68,7 @@ asCDataType::asCDataType(const asCDataType &dt)
 	isObjectHandle         = dt.isObjectHandle;
 	isConstHandle          = dt.isConstHandle;
 	isHandleToAsHandleType = dt.isHandleToAsHandleType;
+	ifHandleThenConst      = dt.ifHandleThenConst;
 }
 
 asCDataType::~asCDataType()
@@ -108,7 +110,7 @@ asCDataType asCDataType::CreateObjectHandle(asCTypeInfo *ot, bool isConst)
 {
 	asCDataType dt;
 
-	asASSERT(ot->CastToObjectType());
+	asASSERT(CastToObjectType(ot));
 
 	dt.tokenType        = ttIdentifier;
 	dt.typeInfo         = ot;
@@ -171,7 +173,8 @@ asCString asCDataType::Format(asSNameSpace *currNs, bool includeNamespace) const
 	{
 		// If funcDef->nameSpace is null it means the funcDef was declared as member of 
 		// another type, in which case the scope should be built with the name of that type
-		str += typeInfo->CastToFuncdefType()->parentClass->name + "::";
+		asCDataType dt = asCDataType::CreateType(CastToFuncdefType(typeInfo)->parentClass, false);
+		str += dt.Format(currNs, includeNamespace) + "::";
 	}
 
 	if( tokenType != ttIdentifier )
@@ -180,7 +183,7 @@ asCString asCDataType::Format(asSNameSpace *currNs, bool includeNamespace) const
 	}
 	else if( IsArrayType() && typeInfo && !typeInfo->engine->ep.expandDefaultArrayToTemplate )
 	{
-		asCObjectType *ot = typeInfo->CastToObjectType();
+		asCObjectType *ot = CastToObjectType(typeInfo);
 		asASSERT( ot && ot->templateSubTypes.GetLength() == 1 );
 		str += ot->templateSubTypes[0].Format(currNs, includeNamespace);
 		str += "[]";
@@ -188,7 +191,7 @@ asCString asCDataType::Format(asSNameSpace *currNs, bool includeNamespace) const
 	else if(typeInfo)
 	{
 		str += typeInfo->name;
-		asCObjectType *ot = typeInfo->CastToObjectType();
+		asCObjectType *ot = CastToObjectType(typeInfo);
 		if( ot && ot->templateSubTypes.GetLength() > 0 )
 		{
 			str += "<";
@@ -233,6 +236,7 @@ asCDataType &asCDataType::operator =(const asCDataType &dt)
 	isConstHandle          = dt.isConstHandle;
 	isAuto                 = dt.isAuto;
 	isHandleToAsHandleType = dt.isHandleToAsHandleType;
+	ifHandleThenConst      = dt.ifHandleThenConst;
 
 	return (asCDataType &)*this;
 }
@@ -289,6 +293,9 @@ int asCDataType::MakeArray(asCScriptEngine *engine, asCModule *module)
 	asCArray<asCDataType> subTypes;
 	subTypes.PushLast(*this);
 	asCObjectType *at = engine->GetTemplateInstanceType(engine->defaultArrayObjectType, subTypes, module);
+	if (at == 0)
+		return asNOT_SUPPORTED;
+
 	isReadOnly = tmpIsReadOnly;
 
 	isObjectHandle = false;
@@ -346,6 +353,9 @@ bool asCDataType::CanBeInstantiated() const
 	if( !IsObject() && !IsFuncdef() ) // Primitives
 		return true; 
 
+	if (IsNullHandle()) // null
+		return false;
+
 	if( IsObjectHandle() && !(typeInfo->flags & asOBJ_NOHANDLE) ) // Handles
 		return true;
 
@@ -354,7 +364,7 @@ bool asCDataType::CanBeInstantiated() const
 	if (IsFuncdef())
 		return false;
 
-	asCObjectType *ot = typeInfo->CastToObjectType();
+	asCObjectType *ot = CastToObjectType(typeInfo);
 	if( ot && (ot->flags & asOBJ_REF) && ot->beh.factories.GetLength() == 0 ) // ref types without factories
 		return false;
 
@@ -374,7 +384,7 @@ bool asCDataType::IsInterface() const
 	if (typeInfo == 0)
 		return false;
 
-	asCObjectType *ot = typeInfo->CastToObjectType();
+	asCObjectType *ot = CastToObjectType(typeInfo);
 	return ot && ot->IsInterface();
 }
 
@@ -389,15 +399,14 @@ bool asCDataType::CanBeCopied() const
 	// It must be possible to instantiate the type
 	if( !CanBeInstantiated() ) return false;
 
-	// It must have a default constructor or factory
-	asCObjectType *ot = typeInfo->CastToObjectType();
-	if( ot && ot->beh.construct == 0 &&
-		ot->beh.factory == 0 ) return false;
+	// It must have a default constructor or factory and the opAssign
+	// Alternatively it must have the copy constructor
+	asCObjectType *ot = CastToObjectType(typeInfo);
+	if (ot && (((ot->beh.construct != 0 || ot->beh.factory != 0) && ot->beh.copy != 0) || 
+		       (ot->beh.copyconstruct != 0 || ot->beh.copyfactory != 0)) )
+		return true;
 
-	// It must be possible to copy the type
-	if( ot && ot->beh.copy == 0 ) return false;
-
-	return true;
+	return false;
 }
 
 bool asCDataType::IsReadOnly() const
@@ -451,7 +460,7 @@ bool asCDataType::IsScriptObject() const
 asCDataType asCDataType::GetSubType(asUINT subtypeIndex) const
 {
 	asASSERT(typeInfo);
-	asCObjectType *ot = typeInfo->CastToObjectType();
+	asCObjectType *ot = CastToObjectType(typeInfo);
 	return ot->templateSubTypes[subtypeIndex];
 }
 
@@ -584,7 +593,7 @@ bool asCDataType::IsObject() const
 		return IsNullHandle();
 
 	// Template subtypes shouldn't be considered objects
-	return typeInfo->CastToObjectType() ? true : false;
+	return CastToObjectType(typeInfo) ? true : false;
 }
 
 bool asCDataType::IsFuncdef() const
@@ -597,6 +606,9 @@ bool asCDataType::IsFuncdef() const
 
 int asCDataType::GetSizeInMemoryBytes() const
 {
+	if( isObjectHandle )
+		return 4 * AS_PTR_SIZE;
+
 	if( typeInfo != 0 )
 		return typeInfo->size;
 
@@ -618,6 +630,10 @@ int asCDataType::GetSizeInMemoryBytes() const
 
 	if( tokenType == ttBool )
 		return AS_SIZEOF_BOOL;
+
+	// ?& is actually a reference + an int 
+	if (tokenType == ttQuestion)
+		return AS_PTR_SIZE * 4 + 4;
 
 	// null handle
 	if( tokenType == ttUnrecognizedToken )
@@ -645,6 +661,10 @@ int asCDataType::GetSizeOnStackDWords() const
 	int size = tokenType == ttQuestion ? 1 : 0;
 
 	if( isReference ) return AS_PTR_SIZE + size;
+
+	// TODO: bug: Registered value types are also stored on the stack. Before changing though, check how GetSizeOnStackDWords is used
+	//            When called to determine size of type as parameter then it is correct, as objects are implicitly passed by reference in AngelScript
+	//            To correct this it would be necessary to know if the method is called for a parameter, or for a local variable
 	if( typeInfo && !IsEnumType() ) return AS_PTR_SIZE + size;
 
 	return GetSizeInMemoryDWords() + size;
@@ -666,7 +686,7 @@ int  asCDataType::GetAlignment() const
 asSTypeBehaviour *asCDataType::GetBehaviour() const
 {
 	if (!typeInfo) return 0;
-	asCObjectType *ot = typeInfo->CastToObjectType();
+	asCObjectType *ot = CastToObjectType(typeInfo);
 	return ot ? &ot->beh : 0; 
 }
 

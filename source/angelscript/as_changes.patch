@@ -1,15 +1,17 @@
-diff -urw /data/projects/angelscript/sdk/angelscript/source/as_builder.cpp source/as_builder.cpp
---- /data/projects/angelscript/sdk/angelscript/source/as_builder.cpp	2016-02-28 18:32:14.588175000 +0100
-+++ source/as_builder.cpp	2016-02-28 18:39:02.158175000 +0100
-@@ -317,11 +317,11 @@
+diff -ur angelscript_2.37.0/source/as_builder.cpp source/as_builder.cpp
+--- angelscript_2.37.0/source/as_builder.cpp	2024-07-13 23:50:46
++++ source/as_builder.cpp	2026-10-17 14:14:37
+@@ -343,12 +343,12 @@
+ 	if( numErrors > 0 )
  		return asERROR;
  
- 	// Make sure something was compiled, otherwise return an error
+-	// Make sure something was compiled, otherwise return an error
 -	if( module->IsEmpty() )
 -	{
 -		WriteError(TXT_NOTHING_WAS_BUILT, 0, 0);
 -		return asERROR;
 -	}
++	// SR2: an empty module is not an error, modules may consist purely of imports
 +	//if( module->IsEmpty() )
 +	//{
 +	//	WriteError(TXT_NOTHING_WAS_BUILT, 0, 0);
@@ -18,11 +20,12 @@ diff -urw /data/projects/angelscript/sdk/angelscript/source/as_builder.cpp sourc
  
  	return asSUCCESS;
  }
-@@ -1112,6 +1112,13 @@
+@@ -1191,6 +1191,14 @@
  			if( outProp ) *outProp = globProp;
  			return true;
  		}
 +
++		// SR2: globals imported from other modules
 +		globProp = module->importedGlobals.GetFirst(ns, prop);
 +		if( globProp )
 +		{
@@ -32,63 +35,135 @@ diff -urw /data/projects/angelscript/sdk/angelscript/source/as_builder.cpp sourc
  	}
  
  	return false;
-@@ -4907,6 +4914,7 @@
- 	asUINT n;
+@@ -2219,6 +2227,7 @@
+ {
+ 	asCScriptNode *n = node->firstChild;
+ 	bool isFinal = false;
++	bool isTidy = false;
+ 	bool isShared = false;
+ 	bool isAbstract = false;
+ 	bool isExternal = false;
+@@ -2276,6 +2285,11 @@
+ 				isAbstract = true;
+ 			}
+ 		}
++		else if( file->TokenEquals(n->tokenPos, n->tokenLength, TIDY_TOKEN) )
++		{
++			// SR2: a tidy class promises never to form reference cycles, so it is excluded from the GC
++			isTidy = true;
++		}
+ 		else
+ 		{
+ 			// This is the name of the class
+@@ -2303,6 +2317,7 @@
+ 	decl->name             = name;
+ 	decl->script           = file;
+ 	decl->node             = node;
++	decl->isTidy           = isTidy;
  
- 	// Get the script declared global functions
-+	{
- 	const asCArray<unsigned int> &idxs = module->globalFunctions.GetIndexes(ns, name);
- 	for( n = 0; n < idxs.GetLength(); n++ )
- 	{
-@@ -4914,6 +4922,17 @@
- 		asASSERT( f->objectType == 0 );
+ 	// External shared interfaces must not try to redefine the interface
+ 	if (isExternal && (n->next == 0 || n->next->tokenType != ttEndStatement))
+@@ -3181,6 +3196,7 @@
+ 
+ 		while (file->TokenEquals(node->tokenPos, node->tokenLength, FINAL_TOKEN) ||
+ 			file->TokenEquals(node->tokenPos, node->tokenLength, SHARED_TOKEN) ||
++			file->TokenEquals(node->tokenPos, node->tokenLength, TIDY_TOKEN) ||
+ 			file->TokenEquals(node->tokenPos, node->tokenLength, ABSTRACT_TOKEN) ||
+ 			file->TokenEquals(node->tokenPos, node->tokenLength, EXTERNAL_TOKEN))
+ 		{
+@@ -3914,6 +3930,13 @@
+ 	
+ 			asCObjectType *ot = CastToObjectType(decl->typeInfo);
+ 			if( ot->IsInterface() ) continue;
++
++			// SR2: tidy classes are declared cycle-free and never garbage collected
++			if( decl->isTidy )
++			{
++				ot->flags &= ~asOBJ_GC;
++				continue;
++			}
+ 	
+ 			typesToValidate.PushLast(ot);
+ 		}
+@@ -4016,6 +4039,9 @@
+ 							// class.
+ 							if( prop->flags & asOBJ_NOINHERIT )
+ 							{
++								// SR2: a member that cannot itself be collected cannot close a cycle through us
++								if( prop->flags & asOBJ_GC )
++								{
+ 								for( asUINT sp = 0; sp < prop->properties.GetLength(); sp++ )
+ 								{
+ 									asCDataType sdt = prop->properties[sp]->type;
+@@ -4025,7 +4051,7 @@
+ 										if( sdt.IsObjectHandle() )
+ 										{
+ 											// TODO: runtime optimize: If the handle is again to a final class, then we can recursively check if the circular reference can occur
+-											if( sdt.GetTypeInfo()->flags & (asOBJ_SCRIPT_OBJECT | asOBJ_GC) )
++											if( (sdt.GetTypeInfo()->flags & (asOBJ_SCRIPT_OBJECT | asOBJ_GC)) == (asOBJ_SCRIPT_OBJECT | asOBJ_GC) )
+ 											{
+ 												gc = true;
+ 												break;
+@@ -4040,6 +4066,7 @@
+ 										}
+ 									}
+ 								}
++								}
+ 	
+ 								if( gc )
+ 									break;
+@@ -5467,7 +5494,7 @@
+ 				// The copy constructor needs to be marked for easy finding
+ 				if( parameterTypes.GetLength() == 1 && 
+ 				    parameterTypes[0].GetTypeInfo() == objType && 
+-					(parameterTypes[0].IsReference() || parameterTypes[0].IsObjectHandle()) )
++					parameterTypes[0].IsReference() && !parameterTypes[0].IsObjectHandle() )
+ 				{
+ 					// Verify that there are not multiple options matching the copy constructor
+ 					// TODO: Need a better message, since the parameters can be slightly different, e.g. & vs @
+@@ -5772,6 +5799,17 @@
  		funcs.PushLast(f->id);
  	}
-+	}
-+
+ 
++	// SR2: functions imported from other modules
 +	{
-+		const asCArray<unsigned int> &idxs = module->importedGlobalFunctions.GetIndexes(ns, name);
-+		for( n = 0; n < idxs.GetLength(); n++ )
++		const asCArray<unsigned int> &impIdxs = module->importedGlobalFunctions.GetIndexes(ns, name);
++		for( n = 0; n < impIdxs.GetLength(); n++ )
 +		{
-+			const asCScriptFunction *f = module->importedGlobalFunctions.Get(idxs[n]);
++			const asCScriptFunction *f = module->importedGlobalFunctions.Get(impIdxs[n]);
 +			asASSERT( f->objectType == 0 );
 +			funcs.PushLast(f->id);
 +		}
 +	}
- 
++
  	// Add the imported functions
  	// TODO: optimize: Linear search: This is probably not that critial. Also bindInformation will probably be removed in near future
-@@ -5686,6 +5705,23 @@
- 			for (n = 0; n < module->funcDefs.GetLength(); n++)
- 				if (!knownTypes.MoveTo(0, module->funcDefs[n]->name))
- 					knownTypes.Insert(module->funcDefs[n]->name, true);
+ 	for( n = 0; n < module->m_bindInformations.GetLength(); n++ )
+@@ -6669,6 +6707,20 @@
+ 			for (n = 0; n < module->m_funcDefs.GetLength(); n++)
+ 				if (!knownTypes.MoveTo(0, module->m_funcDefs[n]->name))
+ 					knownTypes.Insert(module->m_funcDefs[n]->name, true);
 +
-+			//Add anything that was imported
++			// SR2: add anything imported from other modules
 +			for (n = 0; n < module->importedClassTypes.GetLength(); n++)
 +				if (!knownTypes.MoveTo(0, module->importedClassTypes[n]->name))
 +					knownTypes.Insert(module->importedClassTypes[n]->name, true);
-+		
 +			for (n = 0; n < module->importedEnumTypes.GetLength(); n++)
 +				if (!knownTypes.MoveTo(0, module->importedEnumTypes[n]->name))
 +					knownTypes.Insert(module->importedEnumTypes[n]->name, true);
-+		
 +			for (n = 0; n < module->importedTypeDefs.GetLength(); n++)
 +				if (!knownTypes.MoveTo(0, module->importedTypeDefs[n]->name))
 +					knownTypes.Insert(module->importedTypeDefs[n]->name, true);
-+		
 +			for (n = 0; n < module->importedFuncDefs.GetLength(); n++)
 +				if (!knownTypes.MoveTo(0, module->importedFuncDefs[n]->name))
 +					knownTypes.Insert(module->importedFuncDefs[n]->name, true);
  		}
  	}
  
-@@ -5839,6 +5875,23 @@
- 		}
- 	}
- 
-+	for( t = 0; t < module->importedEnumTypes.GetLength(); t++ )
-+	{
-+		asCEnumType *et = module->importedEnumTypes[t];
+@@ -6808,6 +6860,24 @@
+ 	for( t = 0; t < module->m_enumTypes.GetLength(); t++ )
+ 	{
+ 		asCEnumType *et = module->m_enumTypes[t];
 +		if( ns != et->nameSpace ) continue;
 +
 +		if( GetEnumValueFromType(et, name, outDt, outValue) )
@@ -103,23 +178,119 @@ diff -urw /data/projects/angelscript/sdk/angelscript/source/as_builder.cpp sourc
 +		}
 +	}
 +
- 	if( found )
- 		return 1;
++	// SR2: enums imported from other modules
++	for( t = 0; t < module->importedEnumTypes.GetLength(); t++ )
++	{
++		asCEnumType *et = module->importedEnumTypes[t];
+ 		if( ns != et->nameSpace ) continue;
  
-Only in source/: as_builder.cpp.orig
-diff -urw /data/projects/angelscript/sdk/angelscript/source/as_compiler.cpp source/as_compiler.cpp
---- /data/projects/angelscript/sdk/angelscript/source/as_compiler.cpp	2016-02-28 18:32:14.588175000 +0100
-+++ source/as_compiler.cpp	2016-02-28 18:37:26.298175000 +0100
-@@ -2633,12 +2633,12 @@
+ 		if( GetEnumValueFromType(et, name, outDt, outValue) )
+diff -ur angelscript_2.37.0/source/as_builder.h source/as_builder.h
+--- angelscript_2.37.0/source/as_builder.h	2024-03-02 22:02:18
++++ source/as_builder.h	2026-10-17 14:14:37
+@@ -99,7 +99,7 @@
+ 
+ struct sClassDeclaration
+ {
+-	sClassDeclaration() { script = 0; node = 0; validState = 0; typeInfo = 0; isExistingShared = false; isFinal = false;
++	sClassDeclaration() { script = 0; node = 0; validState = 0; typeInfo = 0; isExistingShared = false; isFinal = false; isTidy = false;
+ 		isDefaultConstructorDeleted = false; isDefaultCopyConstructorDeleted = false; isDefaultCopyDeleted = false; }
+ 
+ 	asCScriptCode *script;
+@@ -109,6 +109,7 @@
+ 	asCTypeInfo   *typeInfo;
+ 	bool           isExistingShared;
+ 	bool           isFinal;
++	bool           isTidy;
+ 	bool           isDefaultConstructorDeleted;
+ 	bool           isDefaultCopyConstructorDeleted;
+ 	bool           isDefaultCopyDeleted;
+diff -ur angelscript_2.37.0/source/as_callfunc_arm64.cpp source/as_callfunc_arm64.cpp
+--- angelscript_2.37.0/source/as_callfunc_arm64.cpp	2024-02-26 21:02:06
++++ source/as_callfunc_arm64.cpp	2026-10-17 14:14:37
+@@ -133,7 +133,9 @@
+ 		return false;
+ 
+ 	const bool doubles = (type.GetTypeInfo()->flags & asOBJ_APP_CLASS_ALIGN8) != 0;
+-	const int registersUsed = type.GetSizeInMemoryDWords() / (doubles ? sizeof(double) : sizeof(float));
++	// SR2: one register per member. The size is in dwords, so a double takes two of
++	// them and a float one; upstream divided by the member size in bytes instead.
++	const int registersUsed = type.GetSizeInMemoryDWords() / (doubles ? 2 : 1);
+ 
+ 	return numFloatRegArgs + registersUsed <= FLOAT_ARG_REGISTERS;
+ }
+@@ -170,6 +172,9 @@
+ 	asQWORD       numGPRegArgs    = 0;
+ 	asQWORD       numFloatRegArgs = 0;
+ 	asQWORD       numStackArgs    = 0;
++	// SR2: copies of large non-complex objects that are passed by pointer, freed after the call
++	void         *freeAfterCall[16];
++	asUINT        numFreeAfterCall = 0;
+ #if defined(AS_IPHONE) || defined(AS_MAC)
+ 	asQWORD stackDispositionBytes = 0; // Apple silikin aligns arguments on the stack by the size of their type instead of by 8 bytes like standard arm.
+ #endif
+@@ -244,6 +249,22 @@
+ 				engine->CallFree(*(char**)(args+argsPos));
+ 				argsPos += AS_PTR_SIZE;
+ 			}
++			else if( parmType.GetSizeInMemoryBytes() > 16 )
++			{
++				// SR2: AAPCS64 passes a composite larger than 16 bytes that is not an HFA
++				// as a pointer to a caller owned copy, just like a complex type. The copy
++				// AngelScript already made serves as that copy; it is freed after the call.
++				const bool ptrFits = numGPRegArgs < GP_ARG_REGISTERS;
++				asQWORD *const ptrArray = ptrFits ? gpRegArgs : stackArgs;
++				asQWORD &ptrCount = ptrFits ? numGPRegArgs : numStackArgs;
++#if defined(AS_IPHONE) || defined(AS_MAC)
++				if(!ptrFits) PadAppleStack(ptrArray, ptrCount, stackDispositionBytes, sizeof(asQWORD));
++#endif
++				ptrArray[ptrCount++] = *(asQWORD*)&args[argsPos];
++				if( numFreeAfterCall < 16 )
++					freeAfterCall[numFreeAfterCall++] = *(void**)(args+argsPos);
++				argsPos += AS_PTR_SIZE;
++			}
+ 			else
+ 			{
+ 				// Copy the object's memory to the buffer
+@@ -427,6 +448,9 @@
+ 		else
+ 			retQW = CallARM64(gpRegArgs, numGPRegArgs, floatRegArgs, numFloatRegArgs, stackArgs, numStackArgs, func);
+ 	}
++
++	for( asUINT i = 0; i < numFreeAfterCall; i++ )
++		engine->CallFree(freeAfterCall[i]);
+ 
+ 	return retQW;
+ }
+diff -ur angelscript_2.37.0/source/as_compiler.cpp source/as_compiler.cpp
+--- angelscript_2.37.0/source/as_compiler.cpp	2024-07-14 00:19:02
++++ source/as_compiler.cpp	2026-10-17 14:14:37
+@@ -2039,6 +2039,13 @@
+ 						ctx->type.dataType.MakeReadOnly(true);
+ 					}
+ 				}
++				else if( ctx->type.dataType.IsObject() && ctx->type.dataType.IsEqualExceptRefAndConst(engine->stringType) )
++				{
++					// SR2: string literals were temporaries in 2.31 and could be handed to
++					// non-const references, which the game's string operators expect
++					PrepareTemporaryVariable(node, ctx);
++					ctx->type.dataType.MakeReadOnly(false);
++				}
+ 				else
+ 				{
+ 					Error(TXT_NOT_VALID_REFERENCE, node);
+@@ -3043,13 +3050,13 @@
+ 		}
  		else
  		{
- 			// Warn if this variable hides another variable in a higher scope
+-			// Warn if this variable hides another variable in a higher scope
 -			if( variables->parent && variables->parent->GetVariable(name.AddressOf()) )
 -			{
 -				asCString str;
 -				str.Format(TXT_s_HIDES_VAR_IN_OUTER_SCOPE, name.AddressOf());
 -				Warning(str, node);
 -			}
++			// SR2: shadowing is used deliberately all over the game scripts, don't warn
 +			//if( variables->parent && variables->parent->GetVariable(name.AddressOf()) )
 +			//{
 +			//	asCString str;
@@ -129,161 +300,295 @@ diff -urw /data/projects/angelscript/sdk/angelscript/source/as_compiler.cpp sour
  		}
  
  		// Add marker that the variable has been declared
-@@ -5782,8 +5782,8 @@
+@@ -6480,8 +6487,8 @@
  				ctx->type.dataType.SetTokenType(to.GetTokenType());
  				ctx->type.dataType.SetTypeInfo(to.GetTypeInfo());
  
 -				if( convType != asIC_EXPLICIT_VAL_CAST )
 -					Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
-+				//if( convType != asIC_EXPLICIT_VAL_CAST )
++				//if( convType != asIC_EXPLICIT_VAL_CAST ) // SR2: silenced
 +				//	Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
  			}
  			else if( ctx->type.dataType.IsDoubleType() )
  			{
-@@ -5793,8 +5793,8 @@
+@@ -6491,8 +6498,8 @@
  				ctx->bc.InstrW_W(asBC_dTOi, offset, ctx->type.stackOffset);
  				ctx->type.SetVariable(to, offset, true);
  
 -				if( convType != asIC_EXPLICIT_VAL_CAST )
 -					Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
-+				//if( convType != asIC_EXPLICIT_VAL_CAST )
++				//if( convType != asIC_EXPLICIT_VAL_CAST ) // SR2: silenced
 +				//	Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
  			}
  
  			// Convert to smaller integer if necessary
-@@ -5838,8 +5838,8 @@
+@@ -6536,8 +6543,8 @@
  				ctx->bc.InstrW_W(asBC_fTOi64, offset, ctx->type.stackOffset);
  				ctx->type.SetVariable(to, offset, true);
  
 -				if( convType != asIC_EXPLICIT_VAL_CAST )
 -					Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
-+				//if( convType != asIC_EXPLICIT_VAL_CAST )
++				//if( convType != asIC_EXPLICIT_VAL_CAST ) // SR2: silenced
 +				//	Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
  			}
  			else if( ctx->type.dataType.IsDoubleType() )
  			{
-@@ -5848,8 +5848,8 @@
+@@ -6546,8 +6553,8 @@
  				ctx->type.dataType.SetTokenType(to.GetTokenType());
  				ctx->type.dataType.SetTypeInfo(to.GetTypeInfo());
  
 -				if( convType != asIC_EXPLICIT_VAL_CAST )
 -					Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
-+				//if( convType != asIC_EXPLICIT_VAL_CAST )
++				//if( convType != asIC_EXPLICIT_VAL_CAST ) // SR2: silenced
 +				//	Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
  			}
  		}
  		else if( to.IsUnsignedType() && to.GetSizeInMemoryDWords() == 1  )
-@@ -5878,8 +5878,8 @@
+@@ -6576,8 +6583,8 @@
  				ctx->type.dataType.SetTokenType(to.GetTokenType());
  				ctx->type.dataType.SetTypeInfo(to.GetTypeInfo());
  
 -				if( convType != asIC_EXPLICIT_VAL_CAST )
 -					Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
-+				//if( convType != asIC_EXPLICIT_VAL_CAST )
++				//if( convType != asIC_EXPLICIT_VAL_CAST ) // SR2: silenced
 +				//	Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
  			}
  			else if( ctx->type.dataType.IsDoubleType() )
  			{
-@@ -5889,8 +5889,8 @@
+@@ -6587,8 +6594,8 @@
  				ctx->bc.InstrW_W(asBC_dTOu, offset, ctx->type.stackOffset);
  				ctx->type.SetVariable(to, offset, true);
  
 -				if( convType != asIC_EXPLICIT_VAL_CAST )
 -					Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
-+				//if( convType != asIC_EXPLICIT_VAL_CAST )
++				//if( convType != asIC_EXPLICIT_VAL_CAST ) // SR2: silenced
 +				//	Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
  			}
  
  			// Convert to smaller integer if necessary
-@@ -5934,8 +5934,8 @@
+@@ -6632,8 +6639,8 @@
  				ctx->bc.InstrW_W(asBC_fTOu64, offset, ctx->type.stackOffset);
  				ctx->type.SetVariable(to, offset, true);
  
 -				if( convType != asIC_EXPLICIT_VAL_CAST )
 -					Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
-+				//if( convType != asIC_EXPLICIT_VAL_CAST )
++				//if( convType != asIC_EXPLICIT_VAL_CAST ) // SR2: silenced
 +				//	Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
  			}
  			else if( ctx->type.dataType.IsDoubleType() )
  			{
-@@ -5944,8 +5944,8 @@
+@@ -6642,8 +6649,8 @@
  				ctx->type.dataType.SetTokenType(to.GetTokenType());
  				ctx->type.dataType.SetTypeInfo(to.GetTypeInfo());
  
 -				if( convType != asIC_EXPLICIT_VAL_CAST )
 -					Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
-+				//if( convType != asIC_EXPLICIT_VAL_CAST )
++				//if( convType != asIC_EXPLICIT_VAL_CAST ) // SR2: silenced
 +				//	Warning(TXT_FLOAT_CONV_TO_INT_CAUSE_TRUNC, node);
  			}
  		}
  		else if( to.IsFloatType() )
-Only in source/: as_compiler.cpp.orig
-diff -urw /data/projects/angelscript/sdk/angelscript/source/as_module.cpp source/as_module.cpp
---- /data/projects/angelscript/sdk/angelscript/source/as_module.cpp	2016-02-17 15:53:04.191460000 +0100
-+++ source/as_module.cpp	2016-02-28 18:40:58.278175000 +0100
-@@ -66,6 +66,7 @@
+@@ -7963,8 +7970,15 @@
+ 					cost += asCC_CONST_CONV;
+ 				}
+ 
+-				if (!to.IsReadOnly() && ctx->type.dataType.IsReadOnly())
++				if (!to.IsReadOnly() && ctx->type.dataType.IsReadOnly() && engine->ep.allowUnsafeReferences && convType == asIC_IMPLICIT_CONV)
+ 				{
++					// SR2: 2.31 passed a const object to a non-const reference parameter as-is
++					// when unsafe references are enabled, and the game scripts rely on that
++					// (e.g. taking a Lock on a mutex member from a const method). Keep it.
++					ctx->type.dataType.MakeReadOnly(false);
++				}
++				else if (!to.IsReadOnly() && ctx->type.dataType.IsReadOnly())
++				{
+ 					// A const object can be converted to a non-const object through a copy
+ 					if (allowObjectConstruct || convType == asIC_EXPLICIT_VAL_CAST)
+ 					{
+@@ -8911,6 +8925,12 @@
+ 		
+ 		if( !simpleExpr || needConversion )
+ 		{
++			// SR2: resolve a pending property accessor before converting. The handle to
++			// value step below otherwise runs on the unevaluated accessor expression and
++			// fails for 'obj = other.accessor' where the accessor returns a handle.
++			if( ProcessPropertyGetAccessor(rctx, rexpr) < 0 )
++				return -1;
++
+ 			if( rctx->type.dataType.IsObjectHandle() && !rctx->type.isExplicitHandle && 
+ 			    !lctx->type.dataType.IsObjectHandle() && rctx->type.dataType.GetTypeInfo() == lctx->type.dataType.GetTypeInfo() )
+ 			{
+@@ -9062,6 +9082,24 @@
+ 
+ 			bool isExplicitHandle = le.type.isExplicitHandle || re.type.isExplicitHandle;
+ 
++			// SR2: 2.31 let a 'null' branch take on the handle type of the other branch,
++			// which the game scripts use as 'cond ? null : this'. 2.37's cost based
++			// unification cannot pair a null with an object reference.
++			if (le.type.IsNullConstant() && !re.type.IsNullConstant() && re.type.dataType.IsObject())
++			{
++				asCDataType to = re.type.dataType;
++				to.MakeHandle(true);
++				to.MakeReference(false);
++				ImplicitConversion(&le, to, cexpr->next, asIC_IMPLICIT_CONV);
++			}
++			else if (re.type.IsNullConstant() && !le.type.IsNullConstant() && le.type.dataType.IsObject())
++			{
++				asCDataType to = le.type.dataType;
++				to.MakeHandle(true);
++				to.MakeReference(false);
++				ImplicitConversion(&re, to, cexpr->next->next, asIC_IMPLICIT_CONV);
++			}
++
+ 			// Allow an anonymous initialization list to be converted to the type in the other condition
+ 			if (le.IsAnonymousInitList() && re.type.dataType.GetBehaviour() && re.type.dataType.GetBehaviour()->listFactory)
+ 			{
+@@ -10013,6 +10051,22 @@
+ 		currNamespace = engine->GetParentNameSpace(currNamespace);
+ 	}
+ 
++	// SR2: 2.31 kept searching the parent namespaces of an explicit scope, so
++	// 'locale::X' resolves a global X. Keep that for script compatibility.
++	if( scope != "" && !(scope.GetLength() >= 2 && scope[0] == ':') )
++	{
++		asSNameSpace *scopeNs = engine->FindNameSpace(scope.AddressOf());
++		if( scopeNs )
++		{
++			asSNameSpace *parent = engine->GetParentNameSpace(scopeNs);
++			if( parent )
++			{
++				asCString parentScope = parent->name == "" ? asCString("::") : (asCString("::") + parent->name);
++				return SymbolLookup(name, parentScope, objType, outResult);
++			}
++		}
++	}
++
+ 	// The name doesn't match any symbol
+ 	return SL_NOMATCH;
+ }
+@@ -11721,6 +11775,36 @@
+ 		msg.Format(TXT_NO_MATCHING_SYMBOL_s, smbl.AddressOf());
+ 		Error(msg, node);
+ 		return -1;
++	}
++
++	// SR2: when a type has both a method 'name' and a property accessor 'get_name',
++	// a call 'name()' refers to the method. 2.31 resolved it that way and the game
++	// registers e.g. both 'length()' and 'get_length()' on arrays. The same applies
++	// to scoped calls such as 'Base::name()' where a derived class inherits an accessor.
++	if (symbolType == SL_CLASSPROPACCESS)
++	{
++		asCObjectType *ot = objectType ? objectType : CastToObjectType(lookupResult.type.dataType.GetTypeInfo());
++		if (ot)
++		{
++			asCArray<int> namedMethods;
++			builder->GetObjectMethodDescriptions(name.AddressOf(), ot, namedMethods, objIsConst, scope, node, script);
++			if (namedMethods.GetLength() > 0)
++			{
++				lookupResult.type.dataType.SetTypeInfo(ot);
++				symbolType = SL_CLASSMETHOD;
++			}
++		}
++	}
++
++	// SR2: a member or global variable that shares its name with a type does not
++	// hide the type's constructor in a call expression; 2.31 resolved types first
++	// (the GUI toolkit has an 'Alignment@ Alignment' member next to 'Alignment(rect)')
++	if ((symbolType == SL_CLASSPROP || symbolType == SL_GLOBALVAR) && !objectType)
++	{
++		bool isValid = false;
++		asCDataType dt = builder->CreateDataTypeFromNode(node->firstChild, script, outFunc->nameSpace, false, outFunc->objectType, false, &isValid);
++		if (isValid && dt.GetTypeInfo() && !dt.IsPrimitive())
++			return CompileConstructCall(node, ctx);
+ 	}
+ 
+ 	// Is the symbol matching a variable/property?
+diff -ur angelscript_2.37.0/source/as_gc.h source/as_gc.h
+--- angelscript_2.37.0/source/as_gc.h	2018-06-23 21:12:50
++++ source/as_gc.h	2026-10-17 14:14:37
+@@ -70,7 +70,7 @@
+ 	asCIRCULARREFFUNC_t circularRefDetectCallbackFunc;
+ 	void *              circularRefDetectCallbackParam;
+ 
+-protected:
++public: // SR2: was protected, the game inspects the object lists for diagnostics
+ 	struct asSObjTypePair {void *obj; asCObjectType *type; asUINT seqNbr;};
+ 	struct asSIntTypePair {int i; asCObjectType *type;};
+ 	typedef asSMapNode<void*, asSIntTypePair> asSMapNode_t;
+diff -ur angelscript_2.37.0/source/as_module.cpp source/as_module.cpp
+--- angelscript_2.37.0/source/as_module.cpp	2024-02-28 23:03:28
++++ source/as_module.cpp	2026-10-17 14:14:37
+@@ -65,6 +65,7 @@
  asCModule::~asCModule()
  {
  	InternalReset();
 +	ClearImports();
  
- 	// The builder is not removed by InternalReset because it holds the script 
+ 	// The builder is not removed by InternalReset because it holds the script
  	// sections that will be built, so we need to explictly remove it now if it exists
-@@ -744,7 +745,7 @@
+@@ -840,7 +841,7 @@
  	while( globIt )
  	{
- 		engine->RemoveGlobalProperty(*globIt);
+ 		m_engine->RemoveGlobalProperty(*globIt);
 -		asASSERT( (*globIt)->refCount.get() == 1 );
-+		//asASSERT( (*globIt)->refCount.get() == 1 );
++		//asASSERT( (*globIt)->refCount.get() == 1 ); // SR2: other modules may still hold imported references
  		(*globIt)->Release();
  		globIt++;
  	}
-@@ -759,6 +760,7 @@
- 	asSNameSpace *ns = defaultNamespace;
+@@ -864,14 +865,33 @@
+ 	// Search recursively in the given namespace, moving up to parent namespace until the function is found
  	while( ns )
  	{
+-		const asCArray<unsigned int> &idxs = m_globalFunctions.GetIndexes(ns, name);
+-		if( idxs.GetLength() != 1 )
+-			return 0;
 +		{
- 		const asCArray<unsigned int> &idxs = globalFunctions.GetIndexes(ns, in_name);
- 		if( idxs.GetLength() != 1 )
- 			return 0;
-@@ -766,6 +768,17 @@
- 		const asIScriptFunction *func = globalFunctions.Get(idxs[0]);
- 		if( func )
- 			return const_cast<asIScriptFunction*>(func);
-+		}
-+
-+		{
-+			const asCArray<unsigned int> &idxs = importedGlobalFunctions.GetIndexes(ns, in_name);
-+			if( idxs.GetLength() != 1 )
++			const asCArray<unsigned int> &idxs = m_globalFunctions.GetIndexes(ns, name);
++			if( idxs.GetLength() > 1 )
 +				return 0;
-+
-+			const asIScriptFunction *func = importedGlobalFunctions.Get(idxs[0]);
-+			if( func )
-+				return const_cast<asIScriptFunction*>(func);
+ 
+-		const asIScriptFunction *func = m_globalFunctions.Get(idxs[0]);
+-		if( func )
+-			return const_cast<asIScriptFunction*>(func);
++			if( idxs.GetLength() == 1 )
++			{
++				const asIScriptFunction *func = m_globalFunctions.Get(idxs[0]);
++				if( func )
++					return const_cast<asIScriptFunction*>(func);
++			}
 +		}
  
- 		// Recursively search parent namespaces
- 		ns = engine->GetParentNameSpace(ns);
-@@ -855,6 +868,7 @@
- 	while( ns )
- 	{
- 		asIScriptFunction *f = 0;
++		// SR2: functions imported from other modules
 +		{
- 		const asCArray<unsigned int> &idxs = globalFunctions.GetIndexes(ns, func.name);
- 		for( unsigned int n = 0; n < idxs.GetLength(); n++ )
- 		{
-@@ -887,12 +901,46 @@
++			const asCArray<unsigned int> &idxs = importedGlobalFunctions.GetIndexes(ns, name);
++			if( idxs.GetLength() > 1 )
++				return 0;
++
++			if( idxs.GetLength() == 1 )
++			{
++				const asIScriptFunction *func = importedGlobalFunctions.Get(idxs[0]);
++				if( func )
++					return const_cast<asIScriptFunction*>(func);
++			}
++		}
++
+ 		// Recursively search parent namespaces
+ 		ns = m_engine->GetParentNameSpace(ns);
+ 	}
+@@ -992,11 +1012,45 @@
  
  		if( f )
  			return f;
 -		else
-+		}
 +
-+		{
-+			const asCArray<unsigned int> &idxs = importedGlobalFunctions.GetIndexes(ns, func.name);
-+			for( unsigned int n = 0; n < idxs.GetLength(); n++ )
++		// SR2: functions imported from other modules
+ 		{
+-			// Search for matching functions in the parent namespace
+-			ns = m_engine->GetParentNameSpace(ns);
++			const asCArray<unsigned int> &impIdxs = importedGlobalFunctions.GetIndexes(ns, func.name);
++			for( unsigned int n = 0; n < impIdxs.GetLength(); n++ )
 +			{
-+				const asCScriptFunction *funcPtr = importedGlobalFunctions.Get(idxs[n]);
++				const asCScriptFunction *funcPtr = importedGlobalFunctions.Get(impIdxs[n]);
 +				if( funcPtr->objectType == 0 &&
 +					func.returnType                 == funcPtr->returnType &&
 +					func.parameterTypes.GetLength() == funcPtr->parameterTypes.GetLength()
@@ -300,7 +605,7 @@ diff -urw /data/projects/angelscript/sdk/angelscript/source/as_module.cpp source
 +					}
 +
 +					if( match )
- 		{
++					{
 +						if( f == 0 )
 +							f = const_cast<asCScriptFunction*>(funcPtr);
 +						else
@@ -312,39 +617,87 @@ diff -urw /data/projects/angelscript/sdk/angelscript/source/as_module.cpp source
 +
 +			if( f )
 +				return f;
-+		}
-+		
- 			// Search for matching functions in the parent namespace
- 			ns = engine->GetParentNameSpace(ns);
  		}
--	}
++
++		// Search for matching functions in the parent namespace
++		ns = m_engine->GetParentNameSpace(ns);
+ 	}
  
  	return 0;
- }
-@@ -1483,6 +1531,133 @@
- 	return asSUCCESS;
+@@ -1427,9 +1481,12 @@
+ 	if( src == 0 )
+ 		return asNO_FUNCTION;
+ 
+-	// Verify function signature
+-	if (!dst->IsSignatureExceptNameEqual(src))
++	// Verify function signature. SR2: compare return and parameter types only,
++	// the in/out reference modifiers are not part of the contract as in 2.31
++	if( dst->returnType != src->returnType )
+ 		return asINVALID_INTERFACE;
++	if( dst->parameterTypes != src->parameterTypes )
++		return asINVALID_INTERFACE;
+ 
+ 	m_bindInformations[index]->boundFunctionId = src->GetId();
+ 	src->AddRefInternal();
+@@ -1581,7 +1638,7 @@
+ 	{
+ 		return result->value;
+ 	}
+-	return 0;
++	return GetImportedType(type, ns);
  }
  
-+//interface
+ // internal
+@@ -1593,7 +1650,148 @@
+ 		return CastToObjectType(result->value);
+ 	}
+  
++	return CastToObjectType(GetImportedType(type, ns));
++}
++
++// SR2: look a type up among the imports from other modules
++asCTypeInfo *asCModule::GetImportedType(const asCString &type, asSNameSpace *ns) const
++{
++	asUINT n;
++	for( n = 0; n < importedClassTypes.GetLength(); n++ )
++		if( importedClassTypes[n]->name == type && importedClassTypes[n]->nameSpace == ns )
++			return importedClassTypes[n];
++
++	for( n = 0; n < importedEnumTypes.GetLength(); n++ )
++		if( importedEnumTypes[n]->name == type && importedEnumTypes[n]->nameSpace == ns )
++			return importedEnumTypes[n];
++
++	for( n = 0; n < importedTypeDefs.GetLength(); n++ )
++		if( importedTypeDefs[n]->name == type && importedTypeDefs[n]->nameSpace == ns )
++			return importedTypeDefs[n];
++
++	for( n = 0; n < importedFuncDefs.GetLength(); n++ )
++		if( importedFuncDefs[n]->name == type && importedFuncDefs[n]->nameSpace == ns )
++			return importedFuncDefs[n];
++
+ 	return 0;
++}
++
++// SR2 interface
 +void asCModule::ImportType(asITypeInfo *ti)
 +{
 +	asCTypeInfo *type = reinterpret_cast<asCTypeInfo*>(ti);
++	if( type == 0 )
++		return;
 +
-+	//TODO: Check for name conflicts
-+
-+	if( (type->flags & (asOBJ_VALUE | asOBJ_REF | asOBJ_LIST_PATTERN)) && !(type->flags & asOBJ_FUNCDEF) )
++	if( type->flags & asOBJ_FUNCDEF )
 +	{
-+		asCObjectType *objType = reinterpret_cast<asCObjectType*>(type);
-+		if( importedClassTypes.IndexOf(objType) == -1 )
++		asCFuncdefType *defType = CastToFuncdefType(type);
++		if( defType && importedFuncDefs.IndexOf(defType) == -1 )
 +		{
-+			objType->AddRef();
-+			importedClassTypes.PushLast(objType);
++			defType->AddRef();
++			importedFuncDefs.PushLast(defType);
 +		}
 +	}
 +	else if( type->flags & asOBJ_ENUM )
 +	{
-+		asCEnumType *enumType = reinterpret_cast<asCEnumType*>(type);
-+		if( importedEnumTypes.IndexOf(enumType) == -1 )
++		asCEnumType *enumType = CastToEnumType(type);
++		if( enumType && importedEnumTypes.IndexOf(enumType) == -1 )
 +		{
 +			enumType->AddRef();
 +			importedEnumTypes.PushLast(enumType);
@@ -352,34 +705,32 @@ diff -urw /data/projects/angelscript/sdk/angelscript/source/as_module.cpp source
 +	}
 +	else if( type->flags & asOBJ_TYPEDEF )
 +	{
-+		asCTypedefType *defType = reinterpret_cast<asCTypedefType*>(type);
-+		if( importedTypeDefs.IndexOf(defType) == -1 )
++		asCTypedefType *defType = CastToTypedefType(type);
++		if( defType && importedTypeDefs.IndexOf(defType) == -1 )
 +		{
 +			defType->AddRef();
 +			importedTypeDefs.PushLast(defType);
 +		}
 +	}
-+	else if( type->flags & asOBJ_FUNCDEF )
++	else if( type->flags & (asOBJ_VALUE | asOBJ_REF | asOBJ_LIST_PATTERN) )
 +	{
-+		asCFuncdefType *defType = reinterpret_cast<asCFuncdefType*>(type);
-+		if( importedFuncDefs.IndexOf(defType) == -1 )
++		asCObjectType *objType = CastToObjectType(type);
++		if( objType && importedClassTypes.IndexOf(objType) == -1 )
 +		{
-+			defType->AddRef();
-+			importedFuncDefs.PushLast(reinterpret_cast<asCFuncdefType*>(type));
++			objType->AddRef();
++			importedClassTypes.PushLast(objType);
 +		}
 +	}
 +}
 +
-+void asCModule::ImportGlobalFunction(asIScriptFunction *function) {
++// SR2 interface
++void asCModule::ImportGlobalFunction(asIScriptFunction *function)
++{
 +	asCScriptFunction *f = static_cast<asCScriptFunction*>(function);
-+	if( f->objectType )
-+	{
-+		printf("Failed to import function %s\n", f->GetName());
-+		//TODO: Send an error, this is not a global function
++	if( f == 0 || f->objectType )
 +		return;
-+	}
 +
-+	//If we already have this function, just ignore it. We might have imported it along multiple paths
++	// Already imported along another path
 +	if( importedGlobalFunctions.GetIndex(f) != -1 )
 +		return;
 +
@@ -387,22 +738,27 @@ diff -urw /data/projects/angelscript/sdk/angelscript/source/as_module.cpp source
 +	importedGlobalFunctions.Put(f);
 +}
 +
-+void asCModule::ImportGlobalVariable(asIScriptModule *module, asUINT index) {
-+	//TODO: Check for name conflicts
-+	asCGlobalProperty* prop = 0;
++// SR2 interface
++void asCModule::ImportGlobalVariable(asIScriptModule *module, asUINT index)
++{
++	asCGlobalProperty *prop = 0;
 +	asCModule *other = static_cast<asCModule*>(module);
-+	if( index < other->scriptGlobals.GetSize() )
++	if( other == 0 )
++		return;
++
++	if( index < other->m_scriptGlobals.GetSize() )
 +	{
-+		prop = other->scriptGlobals.Get(index);
++		prop = other->m_scriptGlobals.Get(index);
 +	}
 +	else
 +	{
-+		index -= other->scriptGlobals.GetSize();
++		index -= other->m_scriptGlobals.GetSize();
 +		if( index < other->importedGlobals.GetSize() )
 +			prop = other->importedGlobals.Get(index);
 +	}
 +
-+	if(prop) {
++	if( prop )
++	{
 +		if( importedGlobals.GetIndex(prop) != -1 )
 +			return;
 +
@@ -411,162 +767,268 @@ diff -urw /data/projects/angelscript/sdk/angelscript/source/as_module.cpp source
 +	}
 +}
 +
++// SR2 interface
 +void asCModule::ClearImports()
 +{
 +	asUINT n;
 +	for( n = 0; n < importedClassTypes.GetLength(); n++ )
-+	{
-+		asCObjectType *type = importedClassTypes[n];
-+		type->Release();
-+	}
++		importedClassTypes[n]->Release();
 +	importedClassTypes.SetLength(0);
++
 +	for( n = 0; n < importedEnumTypes.GetLength(); n++ )
-+	{
-+		asCEnumType *type = importedEnumTypes[n];
-+		type->Release();
-+	}
++		importedEnumTypes[n]->Release();
 +	importedEnumTypes.SetLength(0);
++
 +	for( n = 0; n < importedTypeDefs.GetLength(); n++ )
-+	{
-+		asCTypedefType *type = importedTypeDefs[n];
-+		type->Release();
-+	}
++		importedTypeDefs[n]->Release();
 +	importedTypeDefs.SetLength(0);
++
 +	for( n = 0; n < importedFuncDefs.GetLength(); n++ )
-+	{
-+		asCFuncdefType *type = importedFuncDefs[n];
-+		type->Release();
-+	}
++		importedFuncDefs[n]->Release();
 +	importedFuncDefs.SetLength(0);
++
 +	for( n = 0; n < importedGlobalFunctions.GetSize(); n++ )
-+	{
-+		asCScriptFunction *type = importedGlobalFunctions.Get(n);
-+		type->Release();
-+	}
++		importedGlobalFunctions.Get(n)->Release();
 +	importedGlobalFunctions.Clear();
++
 +	for( n = 0; n < importedGlobals.GetSize(); n++ )
-+	{
-+		asCGlobalProperty *type = importedGlobals.Get(n);
-+		type->Release();
-+	}
++		importedGlobals.Get(n)->Release();
 +	importedGlobals.Clear();
-+}
-+
+ }
+ 
  // internal
- asCTypeInfo *asCModule::GetType(const char *type, asSNameSpace *ns)
- {
-@@ -1509,6 +1684,27 @@
- 			funcDefs[n]->nameSpace == ns)
- 			return funcDefs[n];
- 
-+	//Search for imported types
-+	for (n = 0; n < importedClassTypes.GetLength(); n++)
-+		if (importedClassTypes[n]->name == type &&
-+			importedClassTypes[n]->nameSpace == ns)
-+			return importedClassTypes[n];
-+
-+	for (n = 0; n < importedEnumTypes.GetLength(); n++)
-+		if (importedEnumTypes[n]->name == type &&
-+			importedEnumTypes[n]->nameSpace == ns)
-+			return importedEnumTypes[n];
-+
-+	for (n = 0; n < importedTypeDefs.GetLength(); n++)
-+		if (importedTypeDefs[n]->name == type &&
-+			importedTypeDefs[n]->nameSpace == ns)
-+			return importedTypeDefs[n];
-+
-+	for (n = 0; n < importedFuncDefs.GetLength(); n++)
-+		if (importedFuncDefs[n]->name == type &&
-+			importedFuncDefs[n]->nameSpace == ns)
-+			return importedFuncDefs[n];
-+
- 	return 0;
- }
- 
-@@ -1523,6 +1719,11 @@
- 			classTypes[n]->nameSpace == ns )
- 			return classTypes[n];
- 
-+	for( n = 0; n < importedClassTypes.GetLength(); n++ )
-+		if( importedClassTypes[n]->name == type &&
-+			importedClassTypes[n]->nameSpace == ns )
-+			return importedClassTypes[n];
-+
- 	return 0;
- }
- 
-diff -urw /data/projects/angelscript/sdk/angelscript/source/as_module.h source/as_module.h
---- /data/projects/angelscript/sdk/angelscript/source/as_module.h	2016-02-17 15:53:04.171460000 +0100
-+++ source/as_module.h	2016-02-28 18:34:08.608175000 +0100
-@@ -173,6 +173,11 @@
+diff -ur angelscript_2.37.0/source/as_module.h source/as_module.h
+--- angelscript_2.37.0/source/as_module.h	2020-12-02 14:43:08
++++ source/as_module.h	2026-10-17 14:14:37
+@@ -163,6 +163,13 @@
  	virtual void *SetUserData(void *data, asPWORD type);
  	virtual void *GetUserData(asPWORD type) const;
  
-+	virtual void ImportType(asITypeInfo* type);
-+	virtual void ImportGlobalFunction(asIScriptFunction* function);
-+	virtual void ImportGlobalVariable(asIScriptModule* module, asUINT index);
++	// SR2: cross-module imports
++	virtual void ImportType(asITypeInfo *type);
++	virtual void ImportGlobalFunction(asIScriptFunction *function);
++	virtual void ImportGlobalVariable(asIScriptModule *module, asUINT index);
 +	virtual void ClearImports();
++	asCTypeInfo *GetImportedType(const asCString &type, asSNameSpace *ns) const;
 +
  //-----------------------------------------------
  // Internal
  //-----------------------------------------------
-@@ -222,6 +227,7 @@
- 	// This array holds global functions declared in the module. These references are not counted, 
- 	// as the same pointer is always present in the scriptFunctions array too.
- 	asCSymbolTable<asCScriptFunction> globalFunctions; // doesn't increase ref count
-+	asCSymbolTable<asCScriptFunction> importedGlobalFunctions; // increases ref count
- 	// This array holds imported functions in the module.
- 	asCArray<sBindInfo *>             bindInformations; // increases ref count
- 	// This array holds template instance types created for the module's object types
-@@ -229,16 +235,21 @@
- 
- 	// This array holds the global variables declared in the script
- 	asCSymbolTable<asCGlobalProperty> scriptGlobals; // increases ref count
-+	asCSymbolTable<asCGlobalProperty> importedGlobals; // increases ref count
- 	bool                              isGlobalVarInitialized;
- 
- 	// This array holds class and interface types
- 	asCArray<asCObjectType*>       classTypes; // increases ref count
-+	asCArray<asCObjectType*>       importedClassTypes; // increases ref count
- 	// This array holds enum types
- 	asCArray<asCEnumType*>         enumTypes; // increases ref count
-+	asCArray<asCEnumType*>       importedEnumTypes; // increases ref count
- 	// This array holds typedefs
- 	asCArray<asCTypedefType*>      typeDefs; // increases ref count
-+	asCArray<asCTypedefType*>       importedTypeDefs; // increases ref count
+@@ -241,6 +248,14 @@
+ 	asCArray<asCTypedefType*>      m_typeDefs; // increases ref count
  	// This array holds the funcdefs declared in the module
- 	asCArray<asCFuncdefType*>      funcDefs; // increases ref count
-+	asCArray<asCFuncdefType*>       importedFuncDefs; // increases ref count
- };
+ 	asCArray<asCFuncdefType*>      m_funcDefs; // increases ref count
++
++	// SR2: symbols imported from other modules. All of these increase the ref count.
++	asCSymbolTable<asCScriptFunction> importedGlobalFunctions;
++	asCSymbolTable<asCGlobalProperty> importedGlobals;
++	asCArray<asCObjectType*>          importedClassTypes;
++	asCArray<asCEnumType*>            importedEnumTypes;
++	asCArray<asCTypedefType*>         importedTypeDefs;
++	asCArray<asCFuncdefType*>         importedFuncDefs;
  
- END_AS_NAMESPACE
-diff -urw /data/projects/angelscript/sdk/angelscript/source/as_parser.cpp source/as_parser.cpp
---- /data/projects/angelscript/sdk/angelscript/source/as_parser.cpp	2016-02-17 15:53:04.181460000 +0100
-+++ source/as_parser.cpp	2016-02-28 18:34:08.608175000 +0100
-@@ -1685,8 +1685,8 @@
+ 	// This map contains all the types (also contained in the arrays above) for quick lookup
+ 	// TODO: memory: Can we eliminate the arrays above?
+diff -ur angelscript_2.37.0/source/as_parser.cpp source/as_parser.cpp
+--- angelscript_2.37.0/source/as_parser.cpp	2024-04-22 21:55:40
++++ source/as_parser.cpp	2026-10-17 14:14:37
+@@ -1913,8 +1913,8 @@
  				named->AddChildLast(ParseIdentifier());
  				GetToken(&t2);
  
 -				if( engine->ep.alterSyntaxNamedArgs == 1 && t2.type == ttAssignment )
 -					Warning(TXT_NAMED_ARGS_WITH_OLD_SYNTAX, &t2);
-+				//if( engine->ep.alterSyntaxNamedArgs == 1 && t2.type == ttAssignment )
++				//if( engine->ep.alterSyntaxNamedArgs == 1 && t2.type == ttAssignment ) // SR2: silenced
 +				//	Warning(TXT_NAMED_ARGS_WITH_OLD_SYNTAX, &t2);
  
  				named->AddChildLast(ParseAssignment());
  			}
-diff -urw /data/projects/angelscript/sdk/angelscript/include/angelscript.h include/angelscript.h
---- /data/projects/angelscript/sdk/angelscript/include/angelscript.h	2016-02-28 18:32:14.588175000 +0100
-+++ include/angelscript.h	2016-02-28 18:34:11.758175000 +0100
-@@ -895,6 +895,12 @@
+@@ -2478,6 +2478,7 @@
+ 			while (IdentifierIs(t1, SHARED_TOKEN) ||
+ 				IdentifierIs(t1, EXTERNAL_TOKEN) ||
+ 				IdentifierIs(t1, FINAL_TOKEN) ||
++				IdentifierIs(t1, TIDY_TOKEN) ||
+ 				IdentifierIs(t1, ABSTRACT_TOKEN))
+ 				GetToken(&t1);
+ 			RewindTo(&tStart);
+@@ -3467,10 +3468,11 @@
+ 	sToken t;
+ 	GetToken(&t);
+ 
+-	// Allow the keywords 'shared', 'abstract', 'final', and 'external' before 'class'
++	// Allow the keywords 'shared', 'abstract', 'final', 'tidy' (SR2), and 'external' before 'class'
+ 	while( IdentifierIs(t, SHARED_TOKEN) ||
+ 		   IdentifierIs(t, ABSTRACT_TOKEN) ||
+ 		   IdentifierIs(t, FINAL_TOKEN) ||
++		   IdentifierIs(t, TIDY_TOKEN) ||
+ 		   IdentifierIs(t, EXTERNAL_TOKEN) )
+ 	{
+ 		RewindTo(&t);
+diff -ur angelscript_2.37.0/source/as_scriptengine.cpp source/as_scriptengine.cpp
+--- angelscript_2.37.0/source/as_scriptengine.cpp	2024-04-21 22:40:56
++++ source/as_scriptengine.cpp	2026-10-17 14:14:37
+@@ -2708,7 +2708,7 @@
+ 
+ 		asSMapNode<void*, asCGlobalProperty*> *node;
+ 		varAddressMap.MoveTo(&node, prop->GetAddressOfValue());
+-		asASSERT(node);
++		//asASSERT(node); // SR2: imported globals may already have been removed by their owning module
+ 		if( node )
+ 			varAddressMap.Erase(node);
+ 
+diff -ur angelscript_2.37.0/source/as_scriptfunction.cpp source/as_scriptfunction.cpp
+--- angelscript_2.37.0/source/as_scriptfunction.cpp	2024-02-28 23:02:50
++++ source/as_scriptfunction.cpp	2026-10-17 14:14:37
+@@ -360,6 +360,7 @@
+ 
+ 	this->engine           = engine;
+ 	this->scriptData       = 0;
++	userData               = 0; // SR2: plain pointer slot, must start cleared
+ 	module                 = mod;
+ 	objectType             = 0;
+ 	name                   = "";
+@@ -452,17 +453,14 @@
+ // internal
+ void asCScriptFunction::DestroyInternal()
+ {
+-	// Clean up user data
+-	for( asUINT n = 0; n < userData.GetLength(); n += 2 )
++	// Clean up user data (SR2: only the untyped slot exists)
++	if( userData )
+ 	{
+-		if( userData[n+1] )
+-		{
+-			for( asUINT c = 0; c < engine->cleanFunctionFuncs.GetLength(); c++ )
+-				if( engine->cleanFunctionFuncs[c].type == userData[n] )
+-					engine->cleanFunctionFuncs[c].cleanFunc(this);
+-		}
++		for( asUINT c = 0; c < engine->cleanFunctionFuncs.GetLength(); c++ )
++			if( engine->cleanFunctionFuncs[c].type == 0 )
++				engine->cleanFunctionFuncs[c].cleanFunc(this);
+ 	}
+-	userData.SetLength(0);
++	userData = 0;
+ 
+ 	// Release all references the function holds to other objects
+ 	ReleaseReferences();
+@@ -1642,53 +1640,23 @@
+ // interface
+ void *asCScriptFunction::SetUserData(void *data, asPWORD type)
+ {
+-	// As a thread might add a new new user data at the same time as another
+-	// it is necessary to protect both read and write access to the userData member
+-	ACQUIREEXCLUSIVE(engine->engineRWLock);
++	// SR2: the game stores one pointer per function and reads it on every
++	// script call, so this is a plain slot rather than a locked typed array
++	asASSERT( type == 0 );
++	if( type != 0 )
++		return 0;
+ 
+-	// It is not intended to store a lot of different types of userdata,
+-	// so a more complex structure like a associative map would just have
+-	// more overhead than a simple array.
+-	for( asUINT n = 0; n < userData.GetLength(); n += 2 )
+-	{
+-		if( userData[n] == type )
+-		{
+-			void *oldData = reinterpret_cast<void*>(userData[n+1]);
+-			userData[n+1] = reinterpret_cast<asPWORD>(data);
+-
+-			RELEASEEXCLUSIVE(engine->engineRWLock);
+-
+-			return oldData;
+-		}
+-	}
+-
+-	userData.PushLast(type);
+-	userData.PushLast(reinterpret_cast<asPWORD>(data));
+-
+-	RELEASEEXCLUSIVE(engine->engineRWLock);
+-
+-	return 0;
++	void *oldData = userData;
++	userData = data;
++	return oldData;
+ }
+ 
+ // interface
+ void *asCScriptFunction::GetUserData(asPWORD type) const
+ {
+-	// There may be multiple threads reading, but when
+-	// setting the user data nobody must be reading.
+-	ACQUIRESHARED(engine->engineRWLock);
+-
+-	for( asUINT n = 0; n < userData.GetLength(); n += 2 )
+-	{
+-		if( userData[n] == type )
+-		{
+-			RELEASESHARED(engine->engineRWLock);
+-			return reinterpret_cast<void*>(userData[n+1]);
+-		}
+-	}
+-
+-	RELEASESHARED(engine->engineRWLock);
+-
+-	return 0;
++	if( type != 0 )
++		return 0;
++	return userData;
+ }
+ 
+ // internal
+diff -ur angelscript_2.37.0/source/as_scriptfunction.h source/as_scriptfunction.h
+--- angelscript_2.37.0/source/as_scriptfunction.h	2024-03-02 21:51:16
++++ source/as_scriptfunction.h	2026-10-17 14:14:37
+@@ -295,7 +295,7 @@
+ 	asCScriptEngine             *engine;
+ 	asCModule                   *module;
+ 
+-	asCArray<asPWORD>            userData;
++	void                        *userData; // SR2: single untyped slot, read on hot paths without locking
+ 
+ 	// Function signature
+ 	asCString                    name;
+diff -ur angelscript_2.37.0/source/as_tokendef.h source/as_tokendef.h
+--- angelscript_2.37.0/source/as_tokendef.h	2024-03-01 23:38:04
++++ source/as_tokendef.h	2026-10-17 14:14:37
+@@ -248,7 +248,7 @@
+ 	asTokenDef("break"     , ttBreak),
+ 	asTokenDef("case"      , ttCase),
+ 	asTokenDef("cast"      , ttCast),
+-	asTokenDef("catch"     , ttCatch),
++	// SR2: "catch" is not reserved, scripts written for 2.31 use it as an identifier
+ 	asTokenDef("class"     , ttClass),
+ 	asTokenDef("const"     , ttConst),
+ 	asTokenDef("continue"  , ttContinue),
+@@ -287,7 +287,7 @@
+ 	asTokenDef("return"    , ttReturn),
+ 	asTokenDef("switch"    , ttSwitch),
+ 	asTokenDef("true"      , ttTrue),
+-	asTokenDef("try"       , ttTry),
++	// SR2: "try" is not reserved, scripts written for 2.31 use it as an identifier
+ 	asTokenDef("typedef"   , ttTypedef),
+ 	asTokenDef("uint"      , ttUInt),
+ 	asTokenDef("uint8"     , ttUInt8),
+@@ -311,6 +311,7 @@
+ const char * const SUPER_TOKEN     = "super";
+ const char * const SHARED_TOKEN    = "shared";
+ const char * const FINAL_TOKEN     = "final";
++const char * const TIDY_TOKEN      = "tidy";
+ const char * const OVERRIDE_TOKEN  = "override";
+ const char * const GET_TOKEN       = "get";
+ const char * const SET_TOKEN       = "set";
+--- angelscript_2.37.0/include/angelscript.h	2024-07-20 23:22:12
++++ include/angelscript.h	2026-10-17 14:12:55
+@@ -883,6 +883,12 @@
+ 	// User data
  	virtual void *SetUserData(void *data, asPWORD type = 0) = 0;
  	virtual void *GetUserData(asPWORD type = 0) const = 0;
- 
-+	// Cross-module imports
-+	virtual void ImportType(asITypeInfo* type) = 0;
-+	virtual void ImportGlobalFunction(asIScriptFunction* function) = 0;
-+	virtual void ImportGlobalVariable(asIScriptModule* module, asUINT index) = 0;
-+	virtual void ClearImports() = 0;
 +
++	// SR2: cross-module imports
++	virtual void ImportType(asITypeInfo *type) = 0;
++	virtual void ImportGlobalFunction(asIScriptFunction *function) = 0;
++	virtual void ImportGlobalVariable(asIScriptModule *module, asUINT index) = 0;
++	virtual void ClearImports() = 0;
+ 
  protected:
  	virtual ~asIScriptModule() {}
- };

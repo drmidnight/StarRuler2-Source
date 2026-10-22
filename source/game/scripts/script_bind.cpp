@@ -46,8 +46,8 @@ _DOC bind(const char* declaration, asSFuncPtr func, void* obj) {
 	check_doc( engine->RegisterGlobalFunction(declaration, func, asCALL_THISCALL_ASGLOBAL, obj) );
 }
 
-void bindStringFactory(const char* stringClass, asSFuncPtr func, asDWORD callType) {
-	check( engine->RegisterStringFactory(stringClass, func, callType) );
+void bindStringFactory(const char* stringClass, asIStringFactory* factory) {
+	check( engine->RegisterStringFactory(stringClass, factory) );
 }
 
 _GLOBAL_DOC bindGlobal(const char* declaration, void* ptr) {

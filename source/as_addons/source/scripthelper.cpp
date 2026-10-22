@@ -549,7 +549,7 @@ int WriteConfigToStream(asIScriptEngine *engine, ostream &strm)
 	return 0;
 }
 
-int ConfigEngineFromStream(asIScriptEngine *engine, istream &strm, const char *configFile)
+int ConfigEngineFromStream(asIScriptEngine *engine, istream &strm, const char *configFile, asIStringFactory *stringFactory)
 {
 	int r;
 
@@ -814,7 +814,14 @@ int ConfigEngineFromStream(asIScriptEngine *engine, istream &strm, const char *c
 			in::GetToken(engine, type, config, pos);
 			type = type.substr(1, type.length() - 2);
 
-			r = engine->RegisterStringFactory(type.c_str(), asFUNCTION(0), asCALL_GENERIC);
+			// AngelScript 2.33+ needs a string factory object; the caller provides it
+			if( stringFactory == 0 )
+			{
+				engine->WriteMessage(configFile, in::GetLineNumber(config, pos), 0, asMSGTYPE_ERROR, "Cannot register string factory without a factory object");
+				return -1;
+			}
+
+			r = engine->RegisterStringFactory(type.c_str(), stringFactory);
 			if( r < 0 )
 			{
 				engine->WriteMessage(configFile, in::GetLineNumber(config, pos), 0, asMSGTYPE_ERROR, "Failed to register string factory");

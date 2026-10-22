@@ -7,12 +7,88 @@ using namespace std;
 
 BEGIN_AS_NAMESPACE
 
-static void StringFactoryGeneric(asIScriptGeneric *gen) {
-  asUINT length = gen->GetArgDWord(0);
-  const char *s = (const char*)gen->GetArgAddress(1);
-  string str(s, length);
-  gen->SetReturnObject(&str);
+#include <map>
+#include <string.h>
+
+// AngelScript 2.33+ hands out string constants through an asIStringFactory
+// object instead of a factory function. Identical constants share one entry.
+class CStdStringFactory : public asIStringFactory {
+public:
+	typedef std::map<string, int> map_t;
+
+	~CStdStringFactory() {
+		// The engine must release every constant it requested
+		assert(stringCache.size() == 0);
+	}
+
+	const void *GetStringConstant(const char *data, asUINT length) override {
+		asAcquireExclusiveLock();
+		string str(data, length);
+		map_t::iterator it = stringCache.find(str);
+		if(it != stringCache.end())
+			it->second++;
+		else
+			it = stringCache.insert(map_t::value_type(str, 1)).first;
+		asReleaseExclusiveLock();
+		return reinterpret_cast<const void*>(&it->first);
+	}
+
+	int ReleaseStringConstant(const void *str) override {
+		if(str == 0)
+			return asERROR;
+		int ret = asSUCCESS;
+		asAcquireExclusiveLock();
+		map_t::iterator it = stringCache.find(*reinterpret_cast<const string*>(str));
+		if(it == stringCache.end())
+			ret = asERROR;
+		else {
+			it->second--;
+			if(it->second == 0)
+				stringCache.erase(it);
+		}
+		asReleaseExclusiveLock();
+		return ret;
+	}
+
+	int GetRawStringData(const void *str, char *data, asUINT *length) const override {
+		if(str == 0)
+			return asERROR;
+		const string& s = *reinterpret_cast<const string*>(str);
+		if(length)
+			*length = (asUINT)s.length();
+		if(data)
+			memcpy(data, s.c_str(), s.length());
+		return asSUCCESS;
+	}
+
+	map_t stringCache;
+};
+
+static CStdStringFactory *stringFactory = 0;
+
+static CStdStringFactory *GetStdStringFactorySingleton() {
+	if(stringFactory == 0) {
+		asAcquireExclusiveLock();
+		if(stringFactory == 0)
+			stringFactory = new CStdStringFactory();
+		asReleaseExclusiveLock();
+	}
+	return stringFactory;
 }
+
+// Frees the factory at shutdown, after every engine has released its constants
+class CStdStringFactoryCleaner {
+public:
+	~CStdStringFactoryCleaner() {
+		if(stringFactory) {
+			if(stringFactory->stringCache.empty()) {
+				delete stringFactory;
+				stringFactory = 0;
+			}
+		}
+	}
+};
+static CStdStringFactoryCleaner cleaner;
 
 static void ConstructStringGeneric(asIScriptGeneric * gen) {
   new (gen->GetObject()) string();
@@ -268,7 +344,7 @@ void RegisterStdString_Generic(asIScriptEngine *engine)
 	r = engine->RegisterObjectType("string", sizeof(string), asOBJ_VALUE | asOBJ_APP_CLASS_CDAK); assert( r >= 0 );
 
 	// Register the string factory
-	r = engine->RegisterStringFactory("string", asFUNCTION(StringFactoryGeneric), asCALL_GENERIC); assert( r >= 0 );
+	r = engine->RegisterStringFactory("string", GetStdStringFactorySingleton()); assert( r >= 0 );
 
 	// Register the object operator overloads
 	r = engine->RegisterObjectBehaviour("string", asBEHAVE_CONSTRUCT,  "void f()",                    asFUNCTION(ConstructStringGeneric), asCALL_GENERIC); assert( r >= 0 );
@@ -311,11 +387,6 @@ void RegisterStdString_Generic(asIScriptEngine *engine)
 	r = engine->RegisterObjectMethod("string", "string opAdd_r(bool) const", asFUNCTION(AddBool2StringGeneric), asCALL_GENERIC); assert( r >= 0 );
 
 	r = engine->RegisterObjectMethod("string", "string substr(uint start = 0, int count = -1) const", asFUNCTION(StringSubString_Generic), asCALL_GENERIC); assert( r >= 0 );
-}
-
-static string StringFactory(asUINT length, const char *s)
-{
-	return string(s, length);
 }
 
 static void ConstructString(string *thisPointer)
@@ -561,7 +632,7 @@ void RegisterStdString_Native(asIScriptEngine *engine)
 	r = engine->RegisterObjectType("string", sizeof(string), asOBJ_VALUE | asOBJ_APP_CLASS_CDAK); assert( r >= 0 );
 
 	// Register the string factory
-	r = engine->RegisterStringFactory("string", asFUNCTION(StringFactory), asCALL_CDECL); assert( r >= 0 );
+	r = engine->RegisterStringFactory("string", GetStdStringFactorySingleton()); assert( r >= 0 );
 
 	// Register the object operator overloads
 	r = engine->RegisterObjectBehaviour("string", asBEHAVE_CONSTRUCT,  "void f()",                    asFUNCTION(ConstructString), asCALL_CDECL_OBJLAST); assert( r >= 0 );

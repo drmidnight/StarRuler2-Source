@@ -131,7 +131,11 @@ void printContext() {
 		for(unsigned v = 0; v < (unsigned)ctx->GetVarCount(d); ++v) {
 			if(!ctx->IsVarInScope(v,d))
 				continue;
-			inspect(ctx, ctx->GetVarName(v,d), ctx->GetAddressOfVar(v,d), ctx->GetVarTypeId(v,d));
+			const char* varName = 0;
+			int varTypeId = 0;
+			if(ctx->GetVar(v, d, &varName, &varTypeId) < 0)
+				continue;
+			inspect(ctx, varName, ctx->GetAddressOfVar(v,d), varTypeId);
 		}
 	}
 }

@@ -266,6 +266,13 @@ Manager::Manager(asIJITCompiler* Jit) : prevGCSize(5000), pauseScripts(false), c
 
 	engine->SetEngineProperty(asEP_AUTO_GARBAGE_COLLECT, 0);
 	engine->SetEngineProperty(asEP_ALTER_SYNTAX_NAMED_ARGS, 1);
+	//AngelScript 2.33+ expects a 'property' keyword on accessors by default;
+	//mode 2 keeps the get_/set_ prefix convention the game and its scripts use
+	engine->SetEngineProperty(asEP_PROPERTY_ACCESSOR_MODE, 2);
+	//AngelScript 2.33 changed how handles passed to and returned from generic
+	//calling convention functions are reference counted. The game's generic
+	//wrappers were written against the old contract, so keep that behaviour.
+	engine->SetEngineProperty(asEP_GENERIC_CALL_MODE, 0);
 
 	engine->SetMessageCallback(asFUNCTION(printErrors), 0, asCALL_CDECL);
 
@@ -636,7 +643,7 @@ void importSymbol(Module& mod, Module& otherMod, const std::string& symbol) {
 	auto* other = (asCModule*)otherMod.module;
 
 	//Check if it's a type
-	auto* type = other->GetType(symbol.c_str(), other->defaultNamespace);
+	auto* type = other->GetType(symbol.c_str(), other->m_defaultNamespace);
 	if(type) {
 		self->ImportType(type);
 		return;
@@ -649,18 +656,18 @@ void importSymbol(Module& mod, Module& otherMod, const std::string& symbol) {
 		return;
 	}
 
-	glob = other->importedGlobals.GetFirstIndex(self->defaultNamespace, symbol.c_str());
+	glob = other->importedGlobals.GetFirstIndex(self->m_defaultNamespace, symbol.c_str());
 	if(glob != -1) {
-		mod.globalExports.push_back(other->scriptGlobals.GetSize() + (unsigned)glob);
+		mod.globalExports.push_back(other->m_scriptGlobals.GetSize() + (unsigned)glob);
 		return;
 	}
 
 	//Check if it's a function
 	bool foundFunction = false;
 	{
-		const asCArray<unsigned int>& idxs = other->globalFunctions.GetIndexes(other->defaultNamespace, symbol.c_str());
+		const asCArray<unsigned int>& idxs = other->m_globalFunctions.GetIndexes(other->m_defaultNamespace, symbol.c_str());
 		for(unsigned i = 0; i < idxs.GetLength(); ++i) {
-			asCScriptFunction* func = other->globalFunctions.Get(idxs[i]);
+			asCScriptFunction* func = other->m_globalFunctions.Get(idxs[i]);
 			if(func) {
 				self->ImportGlobalFunction(func);
 				foundFunction = true;
@@ -668,7 +675,7 @@ void importSymbol(Module& mod, Module& otherMod, const std::string& symbol) {
 		}
 	}
 	{
-		const asCArray<unsigned int>& idxs = other->importedGlobalFunctions.GetIndexes(other->defaultNamespace, symbol.c_str());
+		const asCArray<unsigned int>& idxs = other->importedGlobalFunctions.GetIndexes(other->m_defaultNamespace, symbol.c_str());
 		for(unsigned i = 0; i < idxs.GetLength(); ++i) {
 			asCScriptFunction* func = other->importedGlobalFunctions.Get(idxs[i]);
 			if(func) {
@@ -799,17 +806,17 @@ bool compileModule(Manager* man, Module& mod) {
 			}
 			else {
 				//Import types
-				for(unsigned i = 0, cnt = other->classTypes.GetLength(); i < cnt; ++i)
-					self->ImportType(other->classTypes[i]);
+				for(unsigned i = 0, cnt = other->m_classTypes.GetLength(); i < cnt; ++i)
+					self->ImportType(other->m_classTypes[i]);
 
-				for(unsigned i = 0, cnt = other->enumTypes.GetLength(); i < cnt; ++i)
-					self->ImportType(other->enumTypes[i]);
+				for(unsigned i = 0, cnt = other->m_enumTypes.GetLength(); i < cnt; ++i)
+					self->ImportType(other->m_enumTypes[i]);
 
-				for(unsigned i = 0, cnt = other->typeDefs.GetLength(); i < cnt; ++i)
-					self->ImportType(other->typeDefs[i]);
+				for(unsigned i = 0, cnt = other->m_typeDefs.GetLength(); i < cnt; ++i)
+					self->ImportType(other->m_typeDefs[i]);
 
-				for(unsigned i = 0, cnt = other->funcDefs.GetLength(); i < cnt; ++i)
-					self->ImportType(other->funcDefs[i]);
+				for(unsigned i = 0, cnt = other->m_funcDefs.GetLength(); i < cnt; ++i)
+					self->ImportType(other->m_funcDefs[i]);
 
 				//This is recursive: also import things that were imported
 				for(unsigned i = 0, cnt = other->importedClassTypes.GetLength(); i < cnt; ++i)
@@ -850,10 +857,10 @@ bool compileModule(Manager* man, Module& mod) {
 				}
 
 				//Import global values
-				for(unsigned i = 0, cnt = other->scriptGlobals.GetSize(); i < cnt; ++i)
+				for(unsigned i = 0, cnt = other->m_scriptGlobals.GetSize(); i < cnt; ++i)
 					self->ImportGlobalVariable(other, i);
 				for(unsigned i = 0, cnt = other->importedGlobals.GetSize(); i < cnt; ++i)
-					self->ImportGlobalVariable(other, i+other->scriptGlobals.GetSize());
+					self->ImportGlobalVariable(other, i+other->m_scriptGlobals.GetSize());
 			}
 		}
 		else {
@@ -890,7 +897,7 @@ bool compileModule(Manager* man, Module& mod) {
 			const std::string& symbol = *exp;
 
 			//Check if it's a type
-			auto* type = self->GetType(symbol.c_str(), self->defaultNamespace);
+			auto* type = self->GetType(symbol.c_str(), self->m_defaultNamespace);
 			if(type) {
 				mod.typeExports.push_back(type);
 				continue;
@@ -903,18 +910,18 @@ bool compileModule(Manager* man, Module& mod) {
 				continue;
 			}
 
-			glob = self->importedGlobals.GetFirstIndex(self->defaultNamespace, symbol.c_str());
+			glob = self->importedGlobals.GetFirstIndex(self->m_defaultNamespace, symbol.c_str());
 			if(glob != -1) {
-				mod.globalExports.push_back(self->scriptGlobals.GetSize() + (unsigned)glob);
+				mod.globalExports.push_back(self->m_scriptGlobals.GetSize() + (unsigned)glob);
 				continue;
 			}
 
 			//Check if it's a function
 			bool foundExports = false;
 			{
-				const asCArray<unsigned int>& idxs = self->globalFunctions.GetIndexes(self->defaultNamespace, symbol.c_str());
+				const asCArray<unsigned int>& idxs = self->m_globalFunctions.GetIndexes(self->m_defaultNamespace, symbol.c_str());
 				for(unsigned i = 0; i < idxs.GetLength(); ++i) {
-					asCScriptFunction* func = self->globalFunctions.Get(idxs[i]);
+					asCScriptFunction* func = self->m_globalFunctions.Get(idxs[i]);
 					if(func) {
 						mod.funcExports.push_back(func);
 						foundExports = true;
@@ -923,9 +930,9 @@ bool compileModule(Manager* man, Module& mod) {
 			}
 
 			{
-				const asCArray<unsigned int>& idxs = self->globalFunctions.GetIndexes(self->defaultNamespace, symbol.c_str());
+				const asCArray<unsigned int>& idxs = self->m_globalFunctions.GetIndexes(self->m_defaultNamespace, symbol.c_str());
 				for(unsigned i = 0; i < idxs.GetLength(); ++i) {
-					asCScriptFunction* func = self->globalFunctions.Get(idxs[i]);
+					asCScriptFunction* func = self->m_globalFunctions.Get(idxs[i]);
 					if(func) {
 						mod.funcExports.push_back(func);
 						foundExports = true;
@@ -1001,7 +1008,10 @@ void bindImports(Manager* man, Module& mod) {
 			continue;
 		}
 
-		tMod->BindImportedFunction(i, func);
+		int r = tMod->BindImportedFunction(i, func);
+		if(r < 0)
+			error("ERROR: '%s': Cannot bind imported function '%s' from module '%s' (code %d): signature mismatch.",
+				tMod->GetName(), decl, sourcemod, r);
 	}
 }
 
@@ -1125,8 +1135,8 @@ void reloadModule(Manager* man, Module& curMod) {
 
 	//Replace successful
 	Module& oldMod = *man->modules[module];
-	((asCModule*)oldMod.module)->name = (module+"__old").c_str();
-	((asCModule*)mod.module)->name = module.c_str();
+	((asCModule*)oldMod.module)->m_name = (module+"__old").c_str();
+	((asCModule*)mod.module)->m_name = module.c_str();
 	fl.module = module;
 	mod.name = module;
 
@@ -1745,14 +1755,16 @@ struct ReadBytecode : public asIBinaryStream {
 		: stream(is) {
 	}
 
-	void Read(void* ptr, asUINT size) {
+	int Read(void* ptr, asUINT size) {
 		if(stream.eof())
 			memset(ptr, 0, size);
 		else
 			stream.read((char*)ptr, size);
+		return 0;
 	}
 
-	void Write(const void* ptr, asUINT size) {
+	int Write(const void* ptr, asUINT size) {
+		return 0;
 	}
 };
 
@@ -1816,11 +1828,13 @@ struct WriteBytecode : public asIBinaryStream {
 		: stream(os) {
 	}
 
-	void Read(void* ptr, asUINT size) {
+	int Read(void* ptr, asUINT size) {
+		return 0;
 	}
 
-	void Write(const void* ptr, asUINT size) {
+	int Write(const void* ptr, asUINT size) {
 		stream.write((const char*)ptr, size);
+		return 0;
 	}
 };
 

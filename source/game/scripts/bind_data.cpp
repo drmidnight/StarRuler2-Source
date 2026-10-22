@@ -1003,8 +1003,8 @@ void RegisterDataBinds() {
 	rnd.addMethod("double randomd()", asMETHOD(ScriptRandom,randomd));
 	rnd.addMethod("double randomd(double min, double max)", asMETHOD(ScriptRandom,randomd_r));
 
-	ClassBind color("Color", asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_C | asOBJ_APP_CLASS_ALLINTS, sizeof(Color));
-	ClassBind colorf("Colorf", asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_C | asOBJ_APP_CLASS_ALLFLOATS, sizeof(Colorf));
+	ClassBind color("Color", asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<Color>() | asOBJ_APP_CLASS_ALLINTS, sizeof(Color));
+	ClassBind colorf("Colorf", asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<Colorf>() | asOBJ_APP_CLASS_ALLFLOATS, sizeof(Colorf));
 
 	{
 		Namespace ns("colors");
@@ -1075,9 +1075,12 @@ void RegisterDataBinds() {
 	}
 
 	//Bind vec2
+//The app-class flags must describe the real C++ type: on arm64 they decide whether a
+//value is returned in registers or memory, and vec3/vec4 are trivially copyable despite
+//the old asOBJ_APP_CLASS_CK claim. asGetTypeTraits derives the flags from the type itself.
 #define bindVector2(name, type, tname, ttype, flags){\
 	delete v;\
-	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_C | flags, sizeof(type));\
+	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<type>() | flags, sizeof(type));\
 	v->addConstructor("void f()", asFUNCTION(vector2d_e<ttype>));\
 	v->addConstructor("void f(" tname ")", asFUNCTION(vector2d_s<ttype>));\
 	v->addConstructor("void f(" tname "," tname ")", asFUNCTION(vector2d<ttype>));\
@@ -1114,10 +1117,13 @@ void RegisterDataBinds() {
 	c.addConstructor("void f(const vec2d& other)", asFUNCTION((v2d_copy<ttype, double>)));\
 	}
 
+	//ALLFLOATS tells AngelScript a type can travel in floating point registers, and
+	//ALIGN8 that its members are doubles rather than floats. arm64 returns such
+	//aggregates in d0-d3, so without these flags vec3d and friends come back as garbage.
 	bindVector2("vec2i", vec2i, "int", int, asOBJ_APP_CLASS_ALLINTS);
 	bindVector2("vec2u", vec2u, "uint", unsigned, asOBJ_APP_CLASS_ALLINTS);
 	bindVector2("vec2f", vec2f, "float", float, asOBJ_APP_CLASS_ALLFLOATS);
-	bindVector2("vec2d", vec2d, "double", double, asOBJ_APP_CLASS_ALLFLOATS);
+	bindVector2("vec2d", vec2d, "double", double, asOBJ_APP_CLASS_ALLFLOATS | asOBJ_APP_CLASS_ALIGN8);
 
 	bindVector2Copy("vec2i", int);
 	bindVector2Copy("vec2u", unsigned);
@@ -1127,7 +1133,7 @@ void RegisterDataBinds() {
 	//Bind vec3
 #define bindVector3(name, type, tname, ttype, flags){\
 	delete v;\
-	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CK flags, sizeof(type));\
+	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<type>() flags, sizeof(type));\
 	v->addConstructor("void f()", asFUNCTION(vector3d_e<ttype>));\
 	v->addConstructor("void f(" tname ")", asFUNCTION(vector3d_s<ttype>));\
 	v->addConstructor("void f(" tname "," tname "," tname ")", asFUNCTION(vector3d<ttype>));\
@@ -1179,8 +1185,8 @@ void RegisterDataBinds() {
 	}
 
 	bindVector3("vec3i", vec3i, "int", int, | asOBJ_APP_CLASS_ALLINTS);
-	bindVector3("vec3f", vec3f, "float", float,);
-	bindVector3("vec3d", vec3d, "double", double,);
+	bindVector3("vec3f", vec3f, "float", float, | asOBJ_APP_CLASS_ALLFLOATS);
+	bindVector3("vec3d", vec3d, "double", double, | asOBJ_APP_CLASS_ALLFLOATS | asOBJ_APP_CLASS_ALIGN8);
 
 	bindVector3Copy("vec3i", int);
 	bindVector3Copy("vec3f", float);
@@ -1189,7 +1195,7 @@ void RegisterDataBinds() {
 	//Bind vec4
 #define bindVector4(name, type, tname, ttype, flags){\
 	delete v;\
-	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CK flags, sizeof(type));\
+	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<type>() flags, sizeof(type));\
 	v->addConstructor("void f()", asFUNCTION(vector4d_e<ttype>));\
 	v->addConstructor("void f(" tname "," tname "," tname "," tname ")", asFUNCTION(vector4d<ttype>));\
 	\
@@ -1210,8 +1216,8 @@ void RegisterDataBinds() {
 	}
 
 	bindVector4("vec4i", vec4i, "int", int, | asOBJ_APP_CLASS_ALLINTS);
-	bindVector4("vec4f", vec4f, "float", float,);
-	bindVector4("vec4d", vec4d, "double", double,);
+	bindVector4("vec4f", vec4f, "float", float, | asOBJ_APP_CLASS_ALLFLOATS);
+	bindVector4("vec4d", vec4d, "double", double, | asOBJ_APP_CLASS_ALLFLOATS | asOBJ_APP_CLASS_ALIGN8);
 
 	bindVector4Copy("vec4i", int);
 	bindVector4Copy("vec4f", float);
@@ -1225,7 +1231,7 @@ void RegisterDataBinds() {
 	
 #define bindPlane(name, type, tname, vname, ttype, flags){\
 	delete v;\
-	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CK flags, sizeof(type));\
+	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<type>() flags, sizeof(type));\
 	v->addConstructor("void f()", asFUNCTION(vector4d_e<ttype>));\
 	v->addConstructor("void f(const " vname " &in," tname ")", asFUNCTION(plane_dd<ttype>));\
 	v->addConstructor("void f(const " vname " &in,const " vname " &in)", asFUNCTION(plane_pd<ttype>));\
@@ -1268,12 +1274,12 @@ void RegisterDataBinds() {
 #ifdef _MSC_VER
 #define bindQuaternion(name, type, tname, ttype, vname, vtype){\
 	delete v;\
-	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_C, sizeof(type));\
+	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<type>(), sizeof(type));\
 	bindQuaternion_b(name, type, tname, ttype, vname, vtype)
 #else
 #define bindQuaternion(name, type, tname, ttype, vname, vtype){\
 	delete v;\
-	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_CK, sizeof(type));\
+	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<type>(), sizeof(type));\
 	v->addConstructor("void f(const " name "&)", asFUNCTION(quat_copy<ttype>));\
 	bindQuaternion_b(name, type, tname, ttype, vname, vtype)
 #endif
@@ -1281,7 +1287,7 @@ void RegisterDataBinds() {
 	bindQuaternion("quaternionf", quaternionf, "float", float, "vec3f", vec3f);
 	bindQuaternion("quaterniond", quaterniond, "double", double, "vec3d", vec3d);
 
-#define declareRect(name, type, flags) { ClassBind bind(name, asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_C flags, sizeof(type)); }
+#define declareRect(name, type, flags) { ClassBind bind(name, asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<type>() flags, sizeof(type)); }
 
 #define bindRect(name, type, tname, ttype, vname, vtype){\
 	delete v;\
@@ -1331,7 +1337,7 @@ void RegisterDataBinds() {
 	
 	declareRect("recti", recti, | asOBJ_APP_CLASS_ALLINTS);
 	declareRect("rectf", rectf, | asOBJ_APP_CLASS_ALLFLOATS);
-	declareRect("rectd", rectd, | asOBJ_APP_CLASS_ALLFLOATS);
+	declareRect("rectd", rectd, | asOBJ_APP_CLASS_ALLFLOATS | asOBJ_APP_CLASS_ALIGN8);
 
 	bindRect("recti", recti, "int", int, "vec2i", vec2i);
 	bindRectConv("rectf", float, int);
@@ -1347,7 +1353,7 @@ void RegisterDataBinds() {
 
 #define bindLine3(name, type, tname, ttype, vname, vtype, flags){\
 	delete v;\
-	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asOBJ_APP_CLASS_C flags, sizeof(type));\
+	v = new ClassBind(name, asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<type>() flags, sizeof(type));\
 	v->addConstructor("void f()", asFUNCTION(line3_e<ttype>));\
 	v->addConstructor("void f(const " vname " &in, const " vname " &in)", asFUNCTION(line3<ttype>));\
 	\
@@ -1367,7 +1373,7 @@ void RegisterDataBinds() {
 
 	bindLine3("line3di", line3di, "int", int, "vec3i", vec2i, | asOBJ_APP_CLASS_ALLINTS);
 	bindLine3("line3df", line3df, "float", float, "vec3f", vec2f, | asOBJ_APP_CLASS_ALLFLOATS);
-	bindLine3("line3dd", line3dd, "double", double, "vec3d", vec2d, | asOBJ_APP_CLASS_ALLFLOATS);
+	bindLine3("line3dd", line3dd, "double", double, "vec3d", vec2d, | asOBJ_APP_CLASS_ALLFLOATS | asOBJ_APP_CLASS_ALIGN8);
 
 #define bindHex(name, type, tname, ttype){\
 	delete v;\

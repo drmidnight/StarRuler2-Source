@@ -225,9 +225,11 @@ std::string getStackVariables(asIScriptContext* context, unsigned frame) {
 			continue;
 		line += context->GetVarDeclaration(n, frame, false);
 		line += " = ";
+		int varTypeId = 0;
+		context->GetVar(n, frame, 0, &varTypeId);
 		line += getScriptVariable(
 			context->GetAddressOfVar(n, frame),
-			context->GetVarTypeId(n, frame),
+			varTypeId,
 			true,
 			context->GetEngine());
 		line += "; ";

@@ -68,7 +68,7 @@ asIScriptEngine* getEngine();
 
 _DOC bind(const char* declaration, asSFuncPtr func, asDWORD callType = asCALL_CDECL);
 _DOC bind(const char* declaration, asSFuncPtr func, void* delegateObject);
-void bindStringFactory(const char* stringClass, asSFuncPtr func, asDWORD callType = asCALL_CDECL);
+void bindStringFactory(const char* stringClass, asIStringFactory* factory);
 _GLOBAL_DOC bindGlobal(const char* declaration, void* ptr);
 void bindFuncdef(const char* declaration);
 

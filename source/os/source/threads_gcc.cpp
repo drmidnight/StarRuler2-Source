@@ -100,7 +100,10 @@ int atomic_int::operator-=(int _sub) {
 }
 
 void atomic_int::operator=(int _value) {
-	value = _value;
+	//Mutex::release and Signal::signal publish through this store. It needs
+	//release ordering, otherwise arm64 may make the store visible before the
+	//writes made inside the critical section.
+	__atomic_store_n(&value, _value, __ATOMIC_SEQ_CST);
 }
 
 int atomic_int::operator&=(int _value) {
@@ -112,7 +115,8 @@ int atomic_int::operator|=(int _value) {
 }
 
 int atomic_int::exchange(int _xchg) {
-	return __sync_lock_test_and_set(&value, _xchg);
+	//__sync_lock_test_and_set is only an acquire barrier
+	return __atomic_exchange_n(&value, _xchg, __ATOMIC_SEQ_CST);
 }
 
 int atomic_int::compare_exchange_strong(int _xchg, int compareTo) {
@@ -120,11 +124,11 @@ int atomic_int::compare_exchange_strong(int _xchg, int compareTo) {
 }
 
 int atomic_int::get_basic() {
-	return value;
+	return __atomic_load_n(&value, __ATOMIC_ACQUIRE);
 }
 
 void atomic_int::set_basic(int val) {
-	value = val;
+	__atomic_store_n(&value, val, __ATOMIC_SEQ_CST);
 }
 
 _threadlocalPointer::_threadlocalPointer() {
@@ -144,7 +148,7 @@ _threadlocalPointer::~_threadlocalPointer() {
 }
 
 int swap(int* ptr, int newval) {
-	return __sync_lock_test_and_set(ptr, newval);
+	return __atomic_exchange_n(ptr, newval, __ATOMIC_SEQ_CST);
 }
 
 int compare_and_swap(int* ptr, int oldval, int newval) {
@@ -152,7 +156,7 @@ int compare_and_swap(int* ptr, int oldval, int newval) {
 }
 
 long long swap(long long* ptr, long long newval) {
-	return __sync_lock_test_and_set(ptr, newval);
+	return __atomic_exchange_n(ptr, newval, __ATOMIC_SEQ_CST);
 }
 
 long long compare_and_swap(long long* ptr, long long oldval, long long newval) {
@@ -160,7 +164,7 @@ long long compare_and_swap(long long* ptr, long long oldval, long long newval) {
 }
 
 void* swap(void** ptr, void* newval) {
-	return __sync_lock_test_and_set(ptr, newval);
+	return __atomic_exchange_n(ptr, newval, __ATOMIC_SEQ_CST);
 }
 
 void* compare_and_swap(void** ptr, void* oldval, void* newval) {

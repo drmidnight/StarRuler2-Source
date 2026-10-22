@@ -1249,7 +1249,12 @@ void initMods(const std::vector<std::string>& mods) {
 		threads::createThread(PreloadBatch, new std::string("scripts/client"));
 	});
 
-	Loading::addTask("MenuScripts", "LocateScripts,SkinStyles,Materials,Models,Sounds,SubSystems", [] {
+	//Menu scripts load textures into materials that start out pointing at the
+	//library's error texture, so that texture must exist before the scripts run.
+	//Without this the menu could race the "Errors" task and draw with a null texture.
+	Loading::addTask("MenuScripts", load_resources
+			? "LocateScripts,SkinStyles,Materials,Models,Sounds,SubSystems,Errors"
+			: "LocateScripts,SkinStyles,Materials,Models,Sounds,SubSystems", [] {
 			std::map<std::string, std::string> scriptfiles;
 			devices.scripts.menu = new scripts::Manager(makeJITCompiler());
 			devices.engines.menu = devices.scripts.menu->engine;

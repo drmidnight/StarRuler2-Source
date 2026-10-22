@@ -4,6 +4,7 @@
 #include "main/references.h"
 #include "util/refcount.h"
 #include <curl/curl.h>
+#include <atomic>
 #include <sstream>
 #include "str_util.h"
 #include "manager.h"
@@ -53,7 +54,9 @@ struct WebData : AtomicRefCounted {
 	}
 
 	bool isCompleted() {
-		return completed;
+		bool c = completed;
+		std::atomic_thread_fence(std::memory_order_acquire);
+		return c;
 	}
 
 	bool wasError() {
@@ -73,6 +76,7 @@ struct WebData : AtomicRefCounted {
 	}
 
 	const std::string& getResult() {
+		std::atomic_thread_fence(std::memory_order_acquire);
 		if(!completed) {
 			scripts::throwException("Attempting to get WebData result before request completed.");
 			return EMPTY_STRING;
@@ -156,6 +160,7 @@ static threads::threadreturn threadcall CurlThread(void* ptr) {
 		curl_formfree(formpost);
 	if(headers)
 		curl_slist_free_all(headers);
+	std::atomic_thread_fence(std::memory_order_release); //arm64: publish result before the flag
 	dat.completed = true;
 	return 0;
 }

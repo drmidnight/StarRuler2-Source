@@ -1,4 +1,5 @@
 #include "script_components.h"
+#include <atomic>
 #include "main/references.h"
 #include "main/logging.h"
 #include "compat/misc.h"
@@ -475,6 +476,7 @@ public:
 			script = object->script;
 		if(!script || (fromGUI && method->restricted && !devices.network->getCurrentPlayer().controls(object->owner))) {
 			if(retValue) {
+				std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
 				retValue->asyncReturned = true;
 
 #ifdef LOG_SLOW_ASYNC_CALLS
@@ -517,6 +519,7 @@ public:
 #ifdef LOG_SLOW_ASYNC_CALLS
 			if(retTime) *retTime = devices.driver->getAccurateTime();
 #endif
+			std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
 			retValue->asyncReturned = true;
 		}
 		else {
@@ -704,6 +707,9 @@ static GenericValue wrapperFunc(void* arg, GenericCallData& args) {
 								return retVal;
 						}
 					}
+
+					//arm64: make sure the returned value is visible now that the flag has been seen
+					std::atomic_thread_fence(std::memory_order_acquire);
 					
 #if defined(LOG_SLOW_ASYNC_CALLS) || defined(PROFILE_ASYNC_CALLS)
 					double end = devices.driver->getAccurateTime();
@@ -757,11 +763,13 @@ public:
 	}
 
 	void process() {
+		std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
 		*done = true;
 	}
 
 	~ObjectWaitMessage() {
 		object->drop();
+		std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
 		*done = true;
 	}
 };
@@ -788,6 +796,7 @@ void objectWait(Object* obj) {
 		else
 			tickRandomMessages(10);
 	}
+	std::atomic_thread_fence(std::memory_order_acquire);
 }
 
 bool getSafeCallWait() {
@@ -1051,6 +1060,7 @@ public:
 			if(script) //Attempted to call restricted method
 				info( format("Cannot call method '$1' on other empires.", method->wrapped.name).c_str() );
 			if(retValue)
+				std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
 				retValue->asyncReturned = true;
 			return;
 		}
@@ -1082,6 +1092,7 @@ public:
 				type->copy(*retValue, ret);
 			else
 				*retValue = ret;
+			std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
 			retValue->asyncReturned = true;
 		}
 		else {

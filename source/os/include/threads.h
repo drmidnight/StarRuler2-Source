@@ -67,8 +67,16 @@ public:
 	//Like compare_exchange_strong, but will not return until the value is exchanged
 	void wait_compare_exchange(int xchg, int compareTo, const int spinCount);
 
+	//Loads use acquire ordering so that data published before a store or
+	//exchange on this value is visible to the reader. x86 orders plain loads
+	//and stores this way already, arm64 does not.
+#ifdef _MSC_VER
 	int get() const { return value; }
 	operator int() const { return value; }
+#else
+	int get() const { return __atomic_load_n(&value, __ATOMIC_ACQUIRE); }
+	operator int() const { return __atomic_load_n(&value, __ATOMIC_ACQUIRE); }
+#endif
 
 	atomic_int() : value(0) {}
 	atomic_int(int v) : value(v) {}

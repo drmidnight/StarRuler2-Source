@@ -297,7 +297,7 @@ static int translateKey(unsigned int key)
         /* 07 */ GLFW_KEY_X,
         /* 08 */ GLFW_KEY_C,
         /* 09 */ GLFW_KEY_V,
-        /* 0a */ GLFW_KEY_GRAVE_ACCENT,
+        /* 0a */ GLFW_KEY_WORLD_1, // SR2: kVK_ISO_Section, GLFW 3.0 had 0x0a and 0x32 swapped
         /* 0b */ GLFW_KEY_B,
         /* 0c */ GLFW_KEY_Q,
         /* 0d */ GLFW_KEY_W,
@@ -337,7 +337,7 @@ static int translateKey(unsigned int key)
         /* 2f */ GLFW_KEY_PERIOD,
         /* 30 */ GLFW_KEY_TAB,
         /* 31 */ GLFW_KEY_SPACE,
-        /* 32 */ GLFW_KEY_WORLD_1,
+        /* 32 */ GLFW_KEY_GRAVE_ACCENT, // SR2: kVK_ANSI_Grave
         /* 33 */ GLFW_KEY_BACKSPACE,
         /* 34 */ GLFW_KEY_UNKNOWN,
         /* 35 */ GLFW_KEY_ESCAPE,

@@ -326,6 +326,11 @@ void Manager::registerDirectory(const std::string& dirname) {
 }
 
 void Manager::finalize() {
+	//The manager is a global constructed before main() runs, possibly before the
+	//working directory is set to the game folder (an app bundle enters its
+	//Resources folder at startup), so resolve the base path again here
+	baseMod->abspath = getAbsolutePath(".");
+
 	foreach(it, mods) {
 		auto* mod = *it;
 		if(!mod->parentname.empty()) {

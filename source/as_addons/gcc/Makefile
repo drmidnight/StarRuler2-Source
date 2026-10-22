@@ -21,11 +21,16 @@ endif
 BIN = libas_addons.a
 SRCDIR = source/as_addons/source
 
+UNAME = $(shell uname)
+MACHINE = $(shell uname -m)
 ifeq ($(origin AR), default)
+ifeq ($(UNAME), Darwin)
+	AR = ar
+else
 	AR = gcc-ar
 endif
+endif
 
-UNAME = $(shell uname)
 ifeq ($(UNAME), Darwin)
 	OSNAME = osx
 else
@@ -43,7 +48,11 @@ else
 	BINDIR = obj/$(OSNAME)$(ARCH)
 
 	CXXFLAGS += -Wno-unused-variable -Wno-unused-but-set-variable
+ifeq ($(UNAME), Darwin)
+	CXXFLAGS += -O3 -ffast-math
+else
 	CXXFLAGS += -Ofast
+endif
 	CXXFLAGS += -DNDEBUG
 ifndef NLTO
 	CXXFLAGS += -flto

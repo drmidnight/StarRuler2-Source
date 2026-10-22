@@ -13,3 +13,25 @@
 *.sdf
 *.db-shm
 *.db-wal
+
+# Build outputs
+/bin/osx64*/
+/obj/
+/dist/
+/source/angelscript/lib/
+/source/angelscript/projects/gnuc/obj/
+
+# GLFW CMake build tree
+/source/glfw/CMakeCache.txt
+/source/glfw/**/CMakeFiles/
+/source/glfw/**/cmake_install.cmake
+/source/glfw/cmake_uninstall.cmake
+/source/glfw/Makefile
+/source/glfw/*/Makefile
+/source/glfw/docs/Doxyfile
+/source/glfw/examples/*.app/
+/source/glfw/tests/*.app/
+/source/glfw/src/config.h
+/source/glfw/src/glfw3.pc
+/source/glfw/src/glfwConfig*.cmake
+/source/glfw/src/libglfw3.a

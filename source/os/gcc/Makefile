@@ -18,13 +18,18 @@ else
 endif
 
 #Global flags
+UNAME = $(shell uname)
+MACHINE = $(shell uname -m)
 ifeq ($(origin AR), default)
+ifeq ($(UNAME), Darwin)
+	AR = ar
+else
 	AR = gcc-ar
+endif
 endif
 BIN = libos.a
 SRCDIR = source/os/source
 
-UNAME = $(shell uname)
 ifeq ($(UNAME), Darwin)
 	OSNAME = osx
 else
@@ -41,7 +46,11 @@ else
 	OBJDIR = obj/$(OSNAME)$(ARCH)/os
 	BINDIR = obj/$(OSNAME)$(ARCH)
 
+ifeq ($(UNAME), Darwin)
+	CXXFLAGS += -O3 -ffast-math
+else
 	CXXFLAGS += -Ofast
+endif
 	CXXFLAGS += -DNDEBUG
 ifndef NLTO
 	CXXFLAGS += -flto

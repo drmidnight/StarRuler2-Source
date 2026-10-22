@@ -18,13 +18,18 @@ else
 endif
 
 #Global flags
+UNAME = $(shell uname)
+MACHINE = $(shell uname -m)
 ifeq ($(origin AR), default)
+ifeq ($(UNAME), Darwin)
+	AR = ar
+else
 	AR = gcc-ar
+endif
 endif
 BIN = libutil.a
 SRCDIR = source/util/source
 
-UNAME = $(shell uname)
 ifeq ($(UNAME), Darwin)
 	OSNAME = osx
 else
@@ -41,7 +46,11 @@ else
 	OBJDIR = obj/$(OSNAME)$(ARCH)/util
 	BINDIR = obj/$(OSNAME)$(ARCH)
 
+ifeq ($(UNAME), Darwin)
+	CXXFLAGS += -O3 -ffast-math
+else
 	CXXFLAGS += -Ofast
+endif
 	CXXFLAGS += -DNDEBUG
 ifndef NLTO
 	CXXFLAGS += -flto
@@ -51,8 +60,9 @@ endif
 endif
 
 ifeq ($(UNAME), Darwin)
-	CXXFLAGS += -I/usr/local/Cellar/libpng/1.6.12/include
-	LDFLAGS += -L/usr/local/Cellar/libpng/1.6.12/lib
+	BREW = $(shell brew --prefix)
+	CXXFLAGS += -I$(BREW)/opt/libpng/include
+	LDFLAGS += -L$(BREW)/opt/libpng/lib
 endif
 
 ifndef CC

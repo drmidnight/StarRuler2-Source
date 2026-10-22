@@ -4,6 +4,7 @@ ifndef ARCH
 endif
 
 UNAME = $(shell uname)
+MACHINE = $(shell uname -m)
 
 #Set correct flags for build type
 
@@ -27,7 +28,12 @@ else
 	OBJDIR = obj/$(OSNAME)$(ARCH)
 	LIBDIR = obj/$(OSNAME)$(ARCH)
 	BUILDTYPE = release
+ifeq ($(UNAME), Darwin)
+	#Apple clang deprecates -Ofast; this is the documented equivalent
+	OPTFLAGS = -O3 -ffast-math
+else
 	OPTFLAGS = -Ofast
+endif
 	CXXFLAGS += $(OPTFLAGS)
 ifdef ADD_DBG
 	CXXFLAGS += -g
@@ -35,7 +41,9 @@ else
 	CXXFLAGS += -DNDEBUG
 endif
 ifndef NLTO
-ifeq (,$(findstring g++, $(CC)))
+ifeq ($(UNAME), Darwin)
+	CXXFLAGS += -flto=thin
+else ifeq (,$(findstring g++, $(CC)))
 	CXXFLAGS += -flto=6
 else
 	CXXFLAGS += -flto=thin
@@ -72,12 +80,22 @@ SRCDIR = source/game
 ifndef CC
 	CC = g++
 endif
+ifeq ($(UNAME), Darwin)
+ifeq ($(origin CC), default)
+	#Pin to the Xcode toolchain: a Homebrew LLVM clang++ earlier on PATH emits
+	#LTO bitcode that Apple's linker cannot read
+	CC = /usr/bin/clang++
+endif
+endif
 
 CXXFLAGS += -std=c++11
 CXXFLAGS += -DLIN_MODE -DGLIBCXX_USE_NANOSLEEP
 CXXFLAGS += -Wall -Wno-invalid-offsetof -Wno-switch -Wno-reorder
 CXXFLAGS += -Wno-unused-local-typedefs
-CXXFLAGS += -Wuninitialized -Wmaybe-uninitialized
+CXXFLAGS += -Wuninitialized
+ifneq ($(UNAME), Darwin)
+	CXXFLAGS += -Wmaybe-uninitialized
+endif
 CXXFLAGS += -Werror=return-type
 CXXFLAGS += -I./source/game -I./source/angelscript/include
 CXXFLAGS += -I/usr/include/freetype2 -isystem./source/glfw/include
@@ -95,18 +113,23 @@ ifndef GCC48
 endif
 
 ifeq ($(UNAME), Darwin)
-	CXXFLAGS += -I/usr/local/opt/freetype/include
-	CXXFLAGS += -I/usr/local/opt/freetype/include/freetype2
-	LDFLAGS += -L/usr/local/opt/freetype/lib
+	#Homebrew lives in /opt/homebrew on arm64 and /usr/local on x86_64
+	BREW = $(shell brew --prefix)
 
-	CXXFLAGS += -I/usr/local/Cellar/libpng/1.6.12/include
-	LDFLAGS += -L/usr/local/Cellar/libpng/1.6.12/lib
+	CXXFLAGS += -DGL_SILENCE_DEPRECATION
+	#No blanket -I$(BREW)/include: it would shadow the patched GLFW headers in source/glfw
+	CXXFLAGS += -I$(BREW)/opt/freetype/include
+	CXXFLAGS += -I$(BREW)/opt/freetype/include/freetype2
+	CXXFLAGS += -I$(BREW)/opt/libpng/include
+	CXXFLAGS += -I$(BREW)/opt/glew/include
 
-	CXXFLAGS += -I/usr/local/Cellar/glew/1.10.0/include
-	LDFLAGS += -L/usr/local/Cellar/glew/1.10.0/lib
-	
-	CXXFLAGS += -framework OpenGL -framework Cocoa -framework IOKit
-	CXXFLAGS += -framework OpenAL
+	LDFLAGS += -L$(BREW)/lib
+	LDFLAGS += -L$(BREW)/opt/freetype/lib
+	LDFLAGS += -L$(BREW)/opt/libpng/lib
+	LDFLAGS += -L$(BREW)/opt/glew/lib
+
+	LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit
+	LDFLAGS += -framework CoreFoundation -framework OpenAL
 
 	LDFLAGS += -lcurl
 else
@@ -165,8 +188,6 @@ endif
 
 #Source code files
 SOURCES = \
-	as/as_jit.cpp \
-	\
 	design/design.cpp \
 	design/effect.cpp \
 	design/effector.cpp \
@@ -299,6 +320,12 @@ SOURCES = \
 	general_states.cpp \
 	processing.cpp \
 	main.cpp
+
+#The script JIT only has x86/x64 backends. initialization.cpp only instantiates
+#it on those architectures, so arm64 runs scripts interpreted.
+ifneq ($(MACHINE), arm64)
+SOURCES += as/as_jit.cpp
+endif
 
 CPP_FILES = $(addprefix $(SRCDIR)/, $(SOURCES))
 OBJ_FILES = $(addprefix $(OBJDIR)/, $(SOURCES:.cpp=.o))

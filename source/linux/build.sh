@@ -3,13 +3,14 @@
 
 build_glfw() {
 	cd source/glfw
-	rm CMakeCache.txt
-	rm -r CMakeFiles
+	rm -f CMakeCache.txt
+	rm -rf CMakeFiles
 
     if [[ "$(uname)" == "Darwin" ]]; then
         export CC=/usr/bin/gcc
     fi
-    CFLAGS="${ARCHFLAGS}" cmake -DCMAKE_AR=$(which $AR) -DCMAKE_RANLIB=$(which $RANLIB) .
+    #GLFW 3.0.2 declares cmake_minimum_required(2.8), which CMake 4 refuses without this
+    CFLAGS="${ARCHFLAGS}" cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_AR=$(which $AR) -DCMAKE_RANLIB=$(which $RANLIB) .
 	CFLAGS="${ARCHFLAGS}" make glfw
 	cd ../../
 	cp source/glfw/src/libglfw3.a $ODIR/libglfw3.a
@@ -18,7 +19,13 @@ build_glfw() {
 build_angelscript() {
 	cd source/angelscript/projects/gnuc
 	make clean
-	CXXFLAGS="$ARCHFLAGS" make all -j6
+	if [[ "$(uname)" == "Darwin" ]]; then
+		#The AngelScript makefile adds no optimisation flags, and on arm64 Macs all
+		#scripts run in its interpreter since the game's JIT is x86 only
+		CXXFLAGS="$ARCHFLAGS -O2" make all -j6
+	else
+		CXXFLAGS="$ARCHFLAGS" make all -j6
+	fi
 	cd ../../../../
 	cp source/angelscript/lib/libangelscript.a $ODIR/libangelscript.a
 }

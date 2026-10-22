@@ -38,7 +38,18 @@ void createThread(threadfunc func, void* arg) {
 	info->func = func;
 	info->arg = arg;
 
+#ifdef __APPLE__
+	//macOS gives secondary threads a 512KB stack by default, against 8MB on Linux.
+	//The script threads nest script and native calls deeply, and on arm64 they run
+	//interpreted rather than through the x86 JIT, so match the Linux default.
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_attr_setstacksize(&attr, 8 * 1024 * 1024);
+	pthread_create(&info->thread, &attr, &startThread, info);
+	pthread_attr_destroy(&attr);
+#else
 	pthread_create(&info->thread, 0, &startThread, info);
+#endif
 }
 
 pthread_mutex_t sleepMutex = PTHREAD_MUTEX_INITIALIZER;

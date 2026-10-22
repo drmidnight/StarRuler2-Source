@@ -40,6 +40,20 @@ GLEW, GLU, freetype2, libvorbisfile, libvorbis, libogg, libopenal, libbz2,
 libXRandR, and libcurl.
 
 
+### Building on macOS
+Apple Silicon Macs running macOS 13 or later are supported. Install the Xcode command line
+tools and CMake, then from the main directory:
+
+    bash source/macos/build_deps.sh
+    make -f source/linux/Makefile compile
+    bash source/macos/make_app.sh
+
+`build_deps.sh` builds libpng, FreeType, GLEW, libogg and libvorbis as static libraries in
+`deps/macos`, so the game has no Homebrew dependencies. `make_app.sh` creates an ad-hoc signed
+`dist/dmg/Star Ruler 2.app` and `dist/StarRuler2-<version>-macos-arm64.dmg`. Without
+`deps/macos` the makefile falls back to Homebrew's libraries, which is fine for running the game
+locally with `StarRuler2.sh`.
+
 ## Differences with Commercial Version
 * The music is not part of the open source release of Star Ruler 2. The data/music/ directory from the commercial
   release can be copied directly into the data/ directory of an open-source build. The music will be detected and played.

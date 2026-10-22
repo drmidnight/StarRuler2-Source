@@ -10,6 +10,13 @@ MACHINE = $(shell uname -m)
 
 ifeq ($(UNAME), Darwin)
 	OSNAME = osx
+#Oldest macOS the binaries run on; inherited by the library builds as well
+export MACOSX_DEPLOYMENT_TARGET ?= 13.0
+#Use the static libraries from source/macos/build_deps.sh when they have been built
+export MACDEPS ?= $(CURDIR)/deps/macos
+ifneq ($(wildcard $(MACDEPS)/lib/libGLEW.a),)
+export USE_MACDEPS = 1
+endif
 else
 	OSNAME = lin
 endif
@@ -113,10 +120,15 @@ ifndef GCC48
 endif
 
 ifeq ($(UNAME), Darwin)
+	CXXFLAGS += -DGL_SILENCE_DEPRECATION
+ifdef USE_MACDEPS
+	#Static libraries from source/macos/build_deps.sh
+	CXXFLAGS += -I$(MACDEPS)/include -I$(MACDEPS)/include/freetype2
+	LDFLAGS += -L$(MACDEPS)/lib
+else
 	#Homebrew lives in /opt/homebrew on arm64 and /usr/local on x86_64
 	BREW = $(shell brew --prefix)
 
-	CXXFLAGS += -DGL_SILENCE_DEPRECATION
 	#No blanket -I$(BREW)/include: it would shadow the patched GLFW headers in source/glfw
 	CXXFLAGS += -I$(BREW)/opt/freetype/include
 	CXXFLAGS += -I$(BREW)/opt/freetype/include/freetype2
@@ -127,6 +139,7 @@ ifeq ($(UNAME), Darwin)
 	LDFLAGS += -L$(BREW)/opt/freetype/lib
 	LDFLAGS += -L$(BREW)/opt/libpng/lib
 	LDFLAGS += -L$(BREW)/opt/glew/lib
+endif
 
 	LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit
 	LDFLAGS += -framework CoreFoundation -framework OpenAL
@@ -144,6 +157,10 @@ endif
 LDFLAGS += -lstdc++ -lGLEW -lpng -lz -lpthread
 LDFLAGS += -lm -lfreetype
 LDFLAGS += -lvorbisfile
+ifdef USE_MACDEPS
+#Static vorbisfile needs its dependencies listed after it
+LDFLAGS += -lvorbis -logg
+endif
 
 LIB_FILES += $(LIBDIR)/libangelscript.a
 LIB_FILES += $(LIBDIR)/libglfw3.a

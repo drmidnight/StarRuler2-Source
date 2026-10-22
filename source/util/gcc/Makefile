@@ -60,9 +60,13 @@ endif
 endif
 
 ifeq ($(UNAME), Darwin)
+ifdef USE_MACDEPS
+	CXXFLAGS += -I$(MACDEPS)/include
+else
 	BREW = $(shell brew --prefix)
 	CXXFLAGS += -I$(BREW)/opt/libpng/include
 	LDFLAGS += -L$(BREW)/opt/libpng/lib
+endif
 endif
 
 ifndef CC

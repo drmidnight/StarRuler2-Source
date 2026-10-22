@@ -28,6 +28,27 @@
 #ifdef __GNUC__
 #include <unistd.h>
 #endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <limits.h>
+#include <stdlib.h>
+
+//When run from an app bundle, the game data lives in Contents/Resources
+static void enterBundleResources() {
+	char exe[PATH_MAX], real[PATH_MAX];
+	uint32_t size = sizeof(exe);
+	if(_NSGetExecutablePath(exe, &size) != 0 || !realpath(exe, real))
+		return;
+	std::string dir(real);
+	dir.erase(dir.rfind('/'));
+	const std::string suffix = "/Contents/MacOS";
+	if(dir.size() > suffix.size() && dir.compare(dir.size() - suffix.size(), suffix.size(), suffix) == 0) {
+		dir.erase(dir.size() - suffix.size());
+		if(chdir((dir + "/Contents/Resources").c_str()) != 0)
+			fprintf(stderr, "Could not enter the app bundle's Resources folder\n");
+	}
+}
+#endif
 
 bool launchPatcher = false;
 
@@ -181,6 +202,9 @@ void netErrorMessage(const char* err, int code) {
 }
 
 int main(int argc, char** argv) {
+#ifdef __APPLE__
+	enterBundleResources();
+#endif
 	std::string launchConnect, launchPassword, launchLobby;
 
 	//Create profile directories

@@ -35,3 +35,4 @@
 /source/glfw/src/glfw3.pc
 /source/glfw/src/glfwConfig*.cmake
 /source/glfw/src/libglfw3.a
+/deps/

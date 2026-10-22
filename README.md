@@ -50,7 +50,7 @@ tools and CMake, then from the main directory:
 
 `build_deps.sh` builds libpng, FreeType, GLEW, libogg and libvorbis as static libraries in
 `deps/macos`, so the game has no Homebrew dependencies. `make_app.sh` creates an ad-hoc signed
-`dist/dmg/Star Ruler 2.app` and `dist/StarRuler2-<version>-macos-arm64.dmg`. Without
+`dist/Star Ruler 2.app` and `dist/StarRuler2-<version>-macos-arm64.dmg`. Without
 `deps/macos` the makefile falls back to Homebrew's libraries, which is fine for running the game
 locally with `StarRuler2.sh`.
 

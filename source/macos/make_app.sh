@@ -22,11 +22,14 @@ BUILD="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
 DIST=dist
-STAGE="$DIST/dmg"
-APP="$STAGE/Star Ruler 2.app"
+APP="$DIST/Star Ruler 2.app"
 DMG="$DIST/StarRuler2-$VERSION-macos-arm64.dmg"
+#The disk image layout is staged outside the repository: its Applications link
+#must not end up inside the game folder, which the game scans as the base mod
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
 
-rm -rf "$STAGE" "$DMG"
+rm -rf "$DIST/dmg" "$APP" "$DMG"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BIN" "$APP/Contents/MacOS/StarRuler2"
@@ -44,6 +47,7 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 codesign --force --sign - --timestamp=none "$APP"
 codesign --verify --strict "$APP"
 
+ditto "$APP" "$STAGE/Star Ruler 2.app"
 ln -s /Applications "$STAGE/Applications"
 cp COPYING "$STAGE/License.txt"
 cat > "$STAGE/Read Me.txt" <<TXT

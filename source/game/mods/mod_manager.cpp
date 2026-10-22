@@ -1,3 +1,6 @@
+#ifndef _MSC_VER
+#include <sys/stat.h>
+#endif
 #include "compat/misc.h"
 #include "files.h"
 #include "mods/mod_manager.h"
@@ -130,6 +133,13 @@ void Mod::loadFileList() {
 		foreach(it, filenames) {
 			std::string absfile = path_join(abspath, *it);
 			std::string relfile = path_join(relpath, *it);
+#ifndef _MSC_VER
+			//Never follow symlinks, one pointing outside the mod (such as a disk
+			//image's Applications link) would make this walk unrelated folders
+			struct stat linkInfo;
+			if(lstat(absfile.c_str(), &linkInfo) == 0 && S_ISLNK(linkInfo.st_mode))
+				continue;
+#endif
 			bool isDir = isDirectory(absfile);
 
 			if(isDir) {

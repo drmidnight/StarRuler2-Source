@@ -591,6 +591,13 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 	if(render) {
 		devices.render->setScreenSize(screenSize.x, screenSize.y);
 		devices.render->setRenderTarget(rt);
+
+		//The 3D pass relies on the skybox covering the whole screen and never clears
+		//the colour buffer. Render targets are cleared when bound, but the window's
+		//back buffer is undefined after a swap on macOS, so clear it explicitly to
+		//avoid trails of previous frames wherever nothing is drawn.
+		if(!rt)
+			devices.render->clearScreen();
 	}
 
 	if(screenSize.y != 0)

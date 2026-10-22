@@ -435,12 +435,13 @@ public:
 					}
 
 					if(state.filterMag != tex->prevRenderState.filterMag) {
+						//Magnification never uses mipmaps, a mipmap mode here is GL_INVALID_ENUM
 						GLint mode;
 						switch(state.filterMag) {
 						case TF_Nearest:
-							mode = tex->hasMipMaps ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST; break;
+							mode = GL_NEAREST; break;
 						case TF_Linear:
-							mode = tex->hasMipMaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR; break;
+							mode = GL_LINEAR; break;
 						NO_DEFAULT
 						}
 						glMultiTexParameteriEXT(texunit, glType, GL_TEXTURE_MAG_FILTER, mode);
@@ -536,12 +537,13 @@ public:
 					}
 
 					if(state.filterMag != tex->prevRenderState.filterMag) {
+						//Magnification never uses mipmaps, a mipmap mode here is GL_INVALID_ENUM
 						GLint mode;
 						switch(state.filterMag) {
 						case TF_Nearest:
-							mode = tex->hasMipMaps ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST; break;
+							mode = GL_NEAREST; break;
 						case TF_Linear:
-							mode = tex->hasMipMaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR; break;
+							mode = GL_LINEAR; break;
 						NO_DEFAULT
 						}
 						glTexParameteri(glType, GL_TEXTURE_MAG_FILTER, mode);
@@ -1065,6 +1067,10 @@ public:
 #endif
 	}
 
+	void clearScreen() override {
+		clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	}
+
 	void setRenderTarget(Texture* texture, bool intermediate = false) {
 		renderVertexBuffers();
 
@@ -1229,8 +1235,16 @@ public:
 					delete mesh;
 				}
 				
+				//The skybox ignores depth, so its radius only has to keep it between the
+				//clip planes. Halfway to the far plane its depth is (far-near)/(far+near),
+				//which rounds to the far plane once far reaches the millions; drivers that
+				//clip strictly (Apple's) then drop the background on random frames while
+				//zooming. Keep it close to the near plane where depth precision is ample.
+				double skyRadius = (zNear + zFar) * 0.5;
+				if(zFar > zNear * 16.0)
+					skyRadius = zNear * 8.0;
 				glPushMatrix();
-				glScaled((zNear + zFar) * 0.5, (zNear + zFar) * 0.5, (zNear + zFar) * 0.5);
+				glScaled(skyRadius, skyRadius, skyRadius);
 				skyboxMesh->render();
 				glPopMatrix();
 			}

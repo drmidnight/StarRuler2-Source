@@ -64,6 +64,8 @@ public:
 	virtual void getBillboardVecs(const vec3d& from, vec3d& upLeft, vec3d& upRight, double rotation = 0) const = 0;
 
 	virtual void clearRenderPrepared() = 0;
+	//Clears the colour and depth of the current render target
+	virtual void clearScreen() = 0;
 	virtual bool isRenderPrepared() = 0;
 	virtual void prepareRender3D(Camera& camera, const recti* clip = 0) = 0;
 	virtual void prepareRender2D() = 0;

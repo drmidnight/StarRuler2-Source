@@ -63,7 +63,9 @@ public:
 		if(!valid)
 			return;
 		
-		glDeleteVertexArrays(1, &vertex_array);
+		//macOS legacy GL contexts have no ARB vertex array objects, so the array is never created there
+		if(vertex_array != 0)
+			glDeleteVertexArrays(1, &vertex_array);
 		glDeleteBuffers(1, &vertex_buffer);
 		glDeleteBuffers(1, &element_buffer);
 		if(tangent_buffer != 0) {

@@ -42,11 +42,35 @@ static const char* getDisplayName(CGDirectDisplayID displayID)
     CFStringRef value;
     CFIndex size;
 
-    info = IODisplayCreateInfoDictionary(CGDisplayIOServicePort(displayID),
-                                         kIODisplayOnlyPreferredName);
+    // macOS 10.15+ exposes the name directly; CGDisplayIOServicePort is
+    // deprecated and returns 0 on Apple Silicon, which made the IOKit path
+    // below dereference a NULL dictionary.
+    if (@available(macOS 10.15, *))
+    {
+        for (NSScreen* screen in [NSScreen screens])
+        {
+            NSNumber* number = [[screen deviceDescription] objectForKey:@"NSScreenNumber"];
+            if ([number unsignedIntValue] == displayID)
+            {
+                const char* localized = [[screen localizedName] UTF8String];
+                if (localized)
+                    return strdup(localized);
+            }
+        }
+    }
+
+    io_service_t port = CGDisplayIOServicePort(displayID);
+    if (!port)
+        return strdup("Unknown");
+
+    info = IODisplayCreateInfoDictionary(port, kIODisplayOnlyPreferredName);
+    if (!info)
+        return strdup("Unknown");
+
     names = CFDictionaryGetValue(info, CFSTR(kDisplayProductName));
 
-    if (!CFDictionaryGetValueIfPresent(names, CFSTR("en_US"),
+    if (!names ||
+        !CFDictionaryGetValueIfPresent(names, CFSTR("en_US"),
                                        (const void**) &value))
     {
         CFRelease(info);

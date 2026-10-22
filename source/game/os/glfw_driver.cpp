@@ -178,10 +178,27 @@ public:
 				}
 			}
 
+			//A fullscreen resolution of 0 means "use the desktop resolution". Resolve it
+			//here so a matching mode is found, instead of falling back to a decorated
+			//desktop sized window that macOS pushes down below the menu bar.
+			if(monitor && (data.width == 0 || data.height == 0)) {
+				const GLFWvidmode* desktop = glfwGetVideoMode(monitor);
+				if(desktop) {
+					data.width = desktop->width;
+					data.height = desktop->height;
+				}
+			}
+
 			if(monitor && !data.overrideMonitor) {
 				int count = 0;
 				const GLFWvidmode* modes = glfwGetVideoModes(monitor, &count);
 				bool match = false;
+				//The current desktop mode is always usable even if the mode list omits it,
+				//macOS does not list scaled Retina desktop modes
+				if(const GLFWvidmode* desktop = glfwGetVideoMode(monitor)) {
+					if(desktop->width == data.width && desktop->height == data.height && (data.refreshRate == 0 || data.refreshRate == desktop->refreshRate))
+						match = true;
+				}
 				for(int i = 0; i < count; ++i) {
 					auto& mode = modes[i];
 					if(mode.width == data.width && mode.height == data.height && (data.refreshRate == 0 || data.refreshRate == mode.refreshRate)) {
@@ -218,6 +235,14 @@ public:
 		glfwMakeContextCurrent(window);
 
 		glfwGetWindowSize(window, &win_width, &win_height);
+		{
+			int fbWidth = 0, fbHeight = 0;
+			glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+			GLint viewport[4] = {0, 0, 0, 0};
+			glGetIntegerv(GL_VIEWPORT, viewport);
+			print("Window %dx%d, framebuffer %dx%d, GL surface %dx%d, %s", win_width, win_height, fbWidth, fbHeight,
+				viewport[2], viewport[3], data.mode == WM_Fullscreen ? "fullscreen" : "windowed");
+		}
 		glfwSwapInterval( data.verticalSync );
 
 		if(data.mode == WM_Fullscreen)

@@ -34,8 +34,29 @@
 //
 static void enterFullscreenMode(_GLFWwindow* window)
 {
-    if ([window->ns.view isInFullScreenMode])
+    if ([window->ns.view isInFullScreenMode] || window->ns.borderlessFullscreen)
         return;
+
+    // SR2: when the requested mode is the current desktop mode there is nothing to
+    // switch. Capturing the display would hide the cursor and moving the view into
+    // NSView's own fullscreen window breaks the window/view size relation on Retina
+    // screens, so cover the screen with the borderless window itself instead.
+    GLFWvidmode current;
+    _glfwPlatformGetVideoMode(window->monitor, &current);
+    if (current.width == window->videoMode.width &&
+        current.height == window->videoMode.height)
+    {
+        window->ns.borderlessFullscreen = GL_TRUE;
+        [NSApp setPresentationOptions:NSApplicationPresentationHideDock |
+                                      NSApplicationPresentationHideMenuBar];
+        [window->ns.object setLevel:NSMainMenuWindowLevel + 1];
+        [window->ns.object setFrame:[window->monitor->ns.screen frame] display:YES];
+        // glfwCreateWindow does not show monitor windows, it expects the view's own
+        // fullscreen window to appear, so show ours here
+        [window->ns.object makeKeyAndOrderFront:nil];
+        _glfwInputWindowVisibility(window, GL_TRUE);
+        return;
+    }
 
     _glfwSetVideoMode(window->monitor, &window->videoMode);
 
@@ -47,6 +68,14 @@ static void enterFullscreenMode(_GLFWwindow* window)
 //
 static void leaveFullscreenMode(_GLFWwindow* window)
 {
+    if (window->ns.borderlessFullscreen)
+    {
+        window->ns.borderlessFullscreen = GL_FALSE;
+        [NSApp setPresentationOptions:NSApplicationPresentationDefault];
+        [window->ns.object setLevel:NSNormalWindowLevel];
+        return;
+    }
+
     if (![window->ns.view isInFullScreenMode])
         return;
 
@@ -160,6 +189,14 @@ static void centerCursor(_GLFWwindow *window)
 {
     _glfwInputWindowFocus(window, GL_TRUE);
 
+    if (window->ns.borderlessFullscreen)
+    {
+        // SR2: back on top of the menu bar when the game regains focus
+        [NSApp setPresentationOptions:NSApplicationPresentationHideDock |
+                                      NSApplicationPresentationHideMenuBar];
+        [window->ns.object setLevel:NSMainMenuWindowLevel + 1];
+    }
+
     //if (window->cursorMode == GLFW_CURSOR_DISABLED)
     //    centerCursor(window);
 }
@@ -167,6 +204,13 @@ static void centerCursor(_GLFWwindow *window)
 - (void)windowDidResignKey:(NSNotification *)notification
 {
     _glfwInputWindowFocus(window, GL_FALSE);
+
+    if (window->ns.borderlessFullscreen)
+    {
+        // SR2: let other applications come in front while the game is not focused
+        [NSApp setPresentationOptions:NSApplicationPresentationDefault];
+        [window->ns.object setLevel:NSNormalWindowLevel];
+    }
 }
 
 @end
@@ -647,8 +691,11 @@ int _glfwPlatformGetKeyForChar(int chr) {
 
 - (void)resetCursorRects
 {
+    // SR2: the invisible 1x1 cursor was GLFW 3.0's way of hiding the pointer for the
+    // disabled cursor mode. The game wants a visible pointer while it captures the
+    // cursor, so use the normal arrow.
     [self discardCursorRects];
-    [self addCursorRect:[self bounds] cursor:_glfw.ns.cursor];
+    [self addCursorRect:[self bounds] cursor:[NSCursor arrowCursor]];
 }
 
 @end
@@ -861,7 +908,7 @@ static GLboolean createWindow(_GLFWwindow* window,
 
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
     if (floor(NSAppKitVersionNumber) >= NSAppKitVersionNumber10_7)
-        [window->ns.view setWantsBestResolutionOpenGLSurface:YES];
+        [window->ns.view setWantsBestResolutionOpenGLSurface:NO]; //SR2: the game sizes its viewport and UI in window points, so keep the framebuffer at window size
 #endif /*MAC_OS_X_VERSION_MAX_ALLOWED*/
 
     [window->ns.object setTitle:[NSString stringWithUTF8String:wndconfig->title]];
@@ -1079,14 +1126,26 @@ void _glfwPlatformSetCursorPos(_GLFWwindow* window, double x, double y)
         CGWarpMouseCursorPosition(CGPointMake(globalPoint.x,
                                               transformY(globalPoint.y)));
     }
+
+    // SR2: after a warp macOS suppresses mouse events for about a quarter of a
+    // second. The game warps the pointer on every drag step, so re-associating the
+    // mouse and cursor here keeps dragging responsive.
+    CGAssociateMouseAndMouseCursorPosition(true);
 }
 
 void _glfwPlatformSetCursorMode(_GLFWwindow* window, int mode)
 {
     if (mode == GLFW_CURSOR_CAPTURED)
     {
+        // SR2: in fullscreen the window covers the screen so there is nothing to
+        // confine the pointer to. Just make sure the pointer stays visible.
         [window->ns.object enableCursorRects];
         [window->ns.object invalidateCursorRectsForView:window->ns.view];
+        if (_glfw.ns.cursorHidden)
+        {
+            [NSCursor unhide];
+            _glfw.ns.cursorHidden = GL_FALSE;
+        }
     }
     else if(mode == GLFW_CURSOR_FREE)
     {

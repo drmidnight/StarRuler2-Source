@@ -67,6 +67,7 @@ typedef struct _GLFWwindowNS
     id	            delegate;
     id              view;
     unsigned int    modifierFlags;
+    GLboolean       borderlessFullscreen; // SR2: fullscreen at the desktop mode without display capture
 } _GLFWwindowNS;
 
 

@@ -33,6 +33,8 @@ rm -rf "$DIST/dmg" "$APP" "$DMG"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BIN" "$APP/Contents/MacOS/StarRuler2"
+#The debug map is only needed to rebuild the dSYM; function names stay for crash traces
+strip -S "$APP/Contents/MacOS/StarRuler2"
 for dir in data scripts locales maps mods; do
 	rsync -a --exclude '.DS_Store' "$dir" "$APP/Contents/Resources/"
 done
@@ -69,3 +71,11 @@ TXT
 hdiutil create -quiet -volname "Star Ruler 2" -srcfolder "$STAGE" -fs HFS+ -format ULMO -ov "$DMG"
 echo "Created $APP"
 echo "Created $DMG ($(du -h "$DMG" | cut -f1))"
+
+#Kept next to the disk image, not shipped: symbolicates crash logs players attach
+if [[ -d "$BIN.dSYM" ]]; then
+	DSYM="$DIST/StarRuler2-$VERSION-$COMMIT.dSYM"
+	rm -rf "$DSYM"
+	ditto "$BIN.dSYM" "$DSYM"
+	echo "Created $DSYM"
+fi

@@ -49,6 +49,13 @@ ifdef ADD_DBG
 else
 	CXXFLAGS += -DNDEBUG
 endif
+ifeq ($(UNAME), Darwin)
+	#Debug info goes into a separate dSYM, so crash logs from players can be symbolicated.
+	#The LTO objects are kept because dsymutil reads the debug info from them.
+	CXXFLAGS += -g
+	LDFLAGS += -Wl,-object_path_lto,$(OBJDIR)/lto
+	DSYM = 1
+endif
 ifndef NLTO
 ifeq ($(UNAME), Darwin)
 	CXXFLAGS += -flto=thin
@@ -368,8 +375,9 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 
 #Complete binary compile
 $(BINDIR)/$(BIN): makelibs $(OBJ_FILES) $(LIB_FILES) $(COPY_LIBS)
-	@mkdir -p $(BINDIR)
+	@mkdir -p $(BINDIR) $(OBJDIR)/lto
 	@$(CC) $(CXXFLAGS) $(LDFLAGS) $(OBJ_FILES) $(LIB_FILES) -o $@
+	$(if $(DSYM),@dsymutil $@ -o $@.dSYM)
 
 makelibs:
 	@mkdir -p $(BINDIR)

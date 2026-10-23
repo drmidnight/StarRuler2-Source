@@ -95,7 +95,7 @@ ifeq ($(origin CC), default)
 endif
 endif
 
-CXXFLAGS += -std=c++11
+CXXFLAGS += -std=c++20
 CXXFLAGS += -DLIN_MODE -DGLIBCXX_USE_NANOSLEEP
 CXXFLAGS += -Wall -Wno-invalid-offsetof -Wno-switch -Wno-reorder
 CXXFLAGS += -Wno-unused-local-typedefs

@@ -63,7 +63,7 @@ ifndef CC
 	CC = g++
 endif
 
-CXXFLAGS += -std=c++11
+CXXFLAGS += -std=c++20
 CXXFLAGS += -Wall -Wno-invalid-offsetof -Wno-switch -Wno-reorder
 CXXFLAGS += -I./source/os/include -I./source/os/source -I./source/util/include
 

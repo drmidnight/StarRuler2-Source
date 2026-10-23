@@ -180,23 +180,23 @@ static int formulaVarIndex(const std::string* nameptr) {
 
 	//Constant variables
 	if(name == "Hexes")
-		return VT_ConstantVariable | CV_Hexes;
+		return VT_ConstantVariable | (int)CV_Hexes;
 	else if(name == "InteriorHexes")
-		return VT_ConstantVariable | CV_InteriorHexes;
+		return VT_ConstantVariable | (int)CV_InteriorHexes;
 	else if(name == "ExteriorHexes")
-		return VT_ConstantVariable | CV_ExteriorHexes;
+		return VT_ConstantVariable | (int)CV_ExteriorHexes;
 	else if(name == "HexSize")
 		return VT_ShipVariable | ShV_HexSize;
 	else if(name == "ShipSize")
-		return VT_ConstantVariable | CV_ShipSize;
+		return VT_ConstantVariable | (int)CV_ShipSize;
 	else if(name == "ShipUsedHexes")
-		return VT_ConstantVariable | CV_ShipUsedHexes;
+		return VT_ConstantVariable | (int)CV_ShipUsedHexes;
 	else if(name == "ShipTotalHexes")
-		return VT_ConstantVariable | CV_ShipTotalHexes;
+		return VT_ConstantVariable | (int)CV_ShipTotalHexes;
 	else if(name == "ShipEmptyHexes")
-		return VT_ConstantVariable | CV_ShipEmptyHexes;
+		return VT_ConstantVariable | (int)CV_ShipEmptyHexes;
 	else if(name == "IsCore")
-		return VT_ConstantVariable | CV_IsCore;
+		return VT_ConstantVariable | (int)CV_IsCore;
 
 	//Game configuration
 	if(name[0] == '$') {
@@ -217,7 +217,7 @@ static int formulaVarIndex(const std::string* nameptr) {
 			//Constant hex variables
 			std::string varname = name.substr(4, name.size() - 4);
 			if(varname == "Exterior")
-				return VT_ConstantVariable | CV_HexExterior;
+				return VT_ConstantVariable | (int)CV_HexExterior;
 
 			//Hex formula variables
 			int i = getHexVariableIndex(varname);
@@ -244,9 +244,9 @@ static int formulaVarIndex(const std::string* nameptr) {
 			//Constant hex variables
 			std::string varname = name.substr(9, name.size() - 9);
 			if(varname == "Active")
-				return VT_ConstantVariable | CV_AdjacentActive;
+				return VT_ConstantVariable | (int)CV_AdjacentActive;
 			if(varname == "This")
-				return VT_ConstantVariable | CV_AdjacentThis;
+				return VT_ConstantVariable | (int)CV_AdjacentThis;
 
 			//Tags
 			if(varname.compare(0, 4, "Tag.")) {

@@ -1,5 +1,7 @@
 #pragma once
 #include <string>
+#include <type_traits>
+#include <utility>
 
 //std::string format("format $1-5", args[0-4])
 //
@@ -50,3 +52,11 @@ std::string format(const char* format, FormatArg a1, FormatArg a2);
 std::string format(const char* format, FormatArg a1, FormatArg a2, FormatArg a3);
 std::string format(const char* format, FormatArg a1, FormatArg a2, FormatArg a3, FormatArg a4);
 std::string format(const char* format, FormatArg a1, FormatArg a2, FormatArg a3, FormatArg a4, FormatArg a5);
+
+//An exact match for any convertible arguments, so that argument dependent lookup
+//on std::string arguments does not make calls ambiguous with C++20's std::format
+template<class... Args>
+	requires (sizeof...(Args) >= 1 && sizeof...(Args) <= 5 && (std::is_constructible_v<FormatArg, Args&&> && ...))
+inline std::string format(const char* fmt, Args&&... args) {
+	return ::format(fmt, FormatArg(std::forward<Args>(args))...);
+}

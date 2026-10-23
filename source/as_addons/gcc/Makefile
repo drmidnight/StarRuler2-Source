@@ -65,7 +65,7 @@ ifndef CC
 	CC = g++
 endif
 
-CXXFLAGS += -std=c++11
+CXXFLAGS += -std=c++20
 CXXFLAGS += -Wall -Wno-invalid-offsetof -Wno-switch -Wno-reorder
 CXXFLAGS += -I./source/as_addons/include -I./source/as_addons/source
 CXXFLAGS += -isystem./source/angelscript/include

@@ -63,7 +63,7 @@ ifndef CC
 	CC = g++
 endif
 
-CXXFLAGS += -std=c++11 -DLIN_MODE
+CXXFLAGS += -std=c++20 -DLIN_MODE
 CXXFLAGS += -Wall -Wno-invalid-offsetof -Wno-switch -Wno-reorder
 CXXFLAGS += -I./source/sound/include -I./source/sound/source
 CXXFLAGS += -I./source/sound/OpenALSoft -isystem./source/sound/vorbis

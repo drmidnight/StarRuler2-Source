@@ -16,7 +16,9 @@
 
 # Build outputs
 /bin/osx64*/
+/bin_d*/
 /obj/
+/obj_d*/
 /dist/
 /source/angelscript/lib/
 /source/angelscript/projects/gnuc/obj/

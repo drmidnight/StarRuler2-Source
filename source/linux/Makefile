@@ -1,3 +1,5 @@
+include source/linux/sanitize.mk
+
 #Find the correct architecture to build for
 ifndef ARCH
 	ARCH = $(shell getconf LONG_BIT)
@@ -22,12 +24,12 @@ else
 endif
 
 ifdef DEBUG
-	BINDIR = bin_d/$(OSNAME)$(ARCH)
-	OBJDIR = obj_d/$(OSNAME)$(ARCH)
-	LIBDIR = obj_d/$(OSNAME)$(ARCH)
+	BINDIR = bin_d$(SANDIR)/$(OSNAME)$(ARCH)
+	OBJDIR = obj_d$(SANDIR)/$(OSNAME)$(ARCH)
+	LIBDIR = obj_d$(SANDIR)/$(OSNAME)$(ARCH)
 
 	BUILDTYPE = debug
-	OPTFLAGS = -O0 -g
+	OPTFLAGS = $(DEBUG_OPT) -g
 	CXXFLAGS += $(OPTFLAGS)
 	CXXFLAGS += -D_DEBUG
 else
@@ -397,10 +399,10 @@ version:
 
 #Library builds
 $(LIBDIR)/libangelscript.a:
-	bash source/linux/build.sh $(ARCH) $(BUILDTYPE) angelscript
+	ODIR=$(LIBDIR) bash source/linux/build.sh $(ARCH) $(BUILDTYPE) angelscript
 
 $(LIBDIR)/libglfw3.a:
-	bash source/linux/build.sh $(ARCH) $(BUILDTYPE) glfw
+	ODIR=$(LIBDIR) bash source/linux/build.sh $(ARCH) $(BUILDTYPE) glfw
 
 #$(LIBDIR)/libbreakpad_client.a:
 	#./source/linux/build.sh $(ARCH) $(BUILDTYPE) breakpad
@@ -427,12 +429,12 @@ $(LIBDIR)/libutil.a:
 clean_angelscript:
 	rm -f $(LIBDIR)/libangelscript.a
 angelscript: clean_angelscript
-	bash source/linux/build.sh $(ARCH) $(BUILDTYPE) angelscript
+	ODIR=$(LIBDIR) bash source/linux/build.sh $(ARCH) $(BUILDTYPE) angelscript
 
 clean_glfw:
 	rm -f $(LIBDIR)/libglfw3.a
 glfw:
-	bash source/linux/build.sh $(ARCH) $(BUILDTYPE) glfw
+	ODIR=$(LIBDIR) bash source/linux/build.sh $(ARCH) $(BUILDTYPE) glfw
 
 #clean_breakpad:
 	#rm -f $(LIBDIR)/libbreakpad_client.a

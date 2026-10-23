@@ -71,7 +71,7 @@ for arg in $args; do
 		;;
 		debug)
 			export ARCHFLAGS="$ARCHFLAGS -O0 -g"
-            export ODIR="obj_d/$OSNAME$ARCH"
+            export ODIR="${ODIR:-obj_d/$OSNAME$ARCH}"
 			mkdir -p "$ODIR"
 		;;
 		release)
@@ -85,7 +85,7 @@ for arg in $args; do
 			else
 				export ARCHFLAGS="$ARCHFLAGS -fno-lto"
 			fi
-			export ODIR="obj/$OSNAME$ARCH"
+			export ODIR="${ODIR:-obj/$OSNAME$ARCH}"
 			mkdir -p "$ODIR"
 		;;
 		libs)

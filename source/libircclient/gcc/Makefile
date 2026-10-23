@@ -1,3 +1,5 @@
+include source/linux/sanitize.mk
+
 #Find the correct architecture to build for
 ifndef ARCH
 	ARCH = $(shell getconf LONG_BIT)
@@ -37,10 +39,10 @@ else
 endif
 
 ifdef DEBUG
-	OBJDIR = obj_d/$(OSNAME)$(ARCH)/libircclient
-	BINDIR = obj_d/$(OSNAME)$(ARCH)
+	OBJDIR = obj_d$(SANDIR)/$(OSNAME)$(ARCH)/libircclient
+	BINDIR = obj_d$(SANDIR)/$(OSNAME)$(ARCH)
 
-	CXXFLAGS += -O0 -g
+	CXXFLAGS += $(DEBUG_OPT) -g
 	CXXFLAGS += -D_DEBUG
 else
 	OBJDIR = obj/$(OSNAME)$(ARCH)/libircclient

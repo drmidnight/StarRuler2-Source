@@ -1,3 +1,18 @@
+# Star Ruler 2 for Apple Silicon Macs
+
+This is a fork of [BlindMindStudios/StarRuler2-Source](https://github.com/BlindMindStudios/StarRuler2-Source)
+that runs Star Ruler 2 natively on Apple Silicon Macs (macOS 13 or later). It upgrades the
+scripting engine to AngelScript 2.37 for native arm64 support, fixes the macOS window, input
+and rendering problems, and packages the game as a Mac app. Download the disk image from the
+[Releases](https://github.com/drmidnight/StarRuler2-Source/releases) page, or see
+[Building on macOS](#building-on-macos) below.
+
+This fork only targets Apple Silicon Macs. If something doesn't work, please
+[open an issue](https://github.com/drmidnight/StarRuler2-Source/issues) describing what
+happened, and attach `~/.starruler2/log.txt` if the game crashed.
+
+---
+
 # Star Ruler 2
 Star Ruler 2 is a massive scale 4X/RTS set in space. Explore dozens, hundreds,
 or even thousands of systems in a galaxy of your choosing, expand across its

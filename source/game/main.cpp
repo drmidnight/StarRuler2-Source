@@ -846,7 +846,9 @@ int main(int argc, char** argv) {
 		devices.network->connect(launchConnect.substr(0, portIndex), port, launchPassword, true);
 	}
 
-	devices.render->reportErrors("Pre-init");
+	//Without a window there is no GL context, and macOS's glGetError crashes without one
+	if(createWindow)
+		devices.render->reportErrors("Pre-init");
 
 	//Run the main loop
 	while(game_state != GS_Quit) {

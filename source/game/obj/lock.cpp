@@ -8,6 +8,7 @@
 #include "network/network_manager.h"
 #include "memory/AllocOnlyPool.h"
 #include "processing.h"
+#include "main/signpost.h"
 #include <deque>
 #include <assert.h>
 #include "empire.h"
@@ -187,6 +188,8 @@ bool updateLockGlobals(double time) {
 
 	prevTick_s = time - prevUpdate;
 	lockQueueLock.release();
+
+	SIGNPOST_INTERVAL("Lock globals");
 
 #ifdef PROFILE_PROCESSING
 	double startTime = devices.driver->getAccurateTime();
@@ -538,6 +541,7 @@ void LockGroup::acquireChildren() {
 }
 
 bool LockGroup::process(double time, int limit) {
+	SIGNPOST_INTERVAL("Lock group");
 #ifdef OBJECT_LOCK_NAGGING
 	if(activeLockGroup && activeLockGroup != this)
 		throw "Trying to process a LockGroup with an object locked.";

@@ -1,6 +1,7 @@
 #include "main/references.h"
 #include "main/logging.h"
 #include "main/initialization.h"
+#include "main/signpost.h"
 #include "render/render_state.h"
 #include "resource/library.h"
 #include "compat/misc.h"
@@ -227,6 +228,7 @@ bool Library::hasQueuedTextures() {
 bool QueuedTexture::load(unsigned maxBytes, unsigned& loadedBytes) {
 	if(images.empty())
 		return true;
+	SIGNPOST_INTERVAL("Texture upload");
 	if(!tex) {
 		clearImages();
 		return true;

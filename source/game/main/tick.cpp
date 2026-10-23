@@ -14,6 +14,7 @@
 #include "render/vertexBuffer.h"
 #include "render/gl_framebuffer.h"
 #include "save_load.h"
+#include "main/signpost.h"
 #include <cmath>
 #include <stdio.h>
 #include <stdint.h>
@@ -64,6 +65,16 @@ namespace scripts {
 	void logException();
 };
 
+static const char* scriptManagerName(scripts::Manager* manager) {
+	if(manager == devices.scripts.server)
+		return "Server";
+	if(manager == devices.scripts.client)
+		return "Client";
+	if(manager == devices.scripts.menu)
+		return "Menu";
+	return "Other";
+}
+
 class RunScriptTick : public processing::Action {
 	double time;
 	double& logTime;
@@ -75,6 +86,7 @@ public:
 	}
 
 	bool run() {
+		SIGNPOST_INTERVAL("Script tick", "%{public}s", scriptManagerName(manager));
 		auto prevSection = enterSection(NS_ScriptTick);
 		double start = devices.driver->getAccurateTime();
 #ifndef _DEBUG
@@ -111,6 +123,7 @@ public:
 	}
 
 	bool run() {
+		SIGNPOST_INTERVAL("Script GC", "%{public}s%{public}s", scriptManagerName(manager), full ? " (full)" : "");
 		double start = devices.driver->getAccurateTime();
 		manager->pauseScriptThreads();
 		double gcStart = devices.driver->getAccurateTime();
@@ -359,6 +372,7 @@ void idleLoadResources(int maxPriority) {
 
 GameState prev_state = GS_Menu;
 void tickGlobal(bool hasScripts) {
+	SIGNPOST_INTERVAL("Tick global");
 #ifdef TRACE_GC_LOCK
 	devices.scripts.menu->markGCImpossible();
 	devices.scripts.client->markGCImpossible();
@@ -605,6 +619,7 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 
 	double animTotal = 0.0;
 	{
+		SIGNPOST_INTERVAL("Animate");
 		int nodeCount = (int)devices.scene->children.size();
 		animProcessed = 0;
 
@@ -658,6 +673,7 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 	animation_s = animTotal;
 
 	auto prevSection = enterSection(NS_Render);
+	SIGNPOST_INTERVAL("Render");
 
 	if(render) {
 		devices.render->setDefaultRenderState();

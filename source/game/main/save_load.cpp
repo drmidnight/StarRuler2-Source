@@ -2,6 +2,7 @@
 #include "util/save_file.h"
 #include "references.h"
 #include "logging.h"
+#include "signpost.h"
 #include "obj/universe.h"
 #include "obj/obj_group.h"
 #include "empire.h"
@@ -91,6 +92,7 @@ void addDummyIdentifiers(SaveFile& file) {
 }
 
 bool saveGame(const std::string& filename) {
+	SIGNPOST_INTERVAL("Save game");
 	//TODO: Handle errors gracefully, or guarantee they cannot occur
 	try {
 		SaveFile* pfile = SaveFile::open(filename, SM_Write);

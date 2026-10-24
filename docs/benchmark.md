@@ -68,7 +68,6 @@ of exiting.
   | Script GC | `main/tick.cpp` | One script engine's garbage collection (labelled; "(full)" for full cycles) |
   | Animate | `main/tick.cpp` | Scene animation for a frame, including waiting on script ticks |
   | Render | `main/tick.cpp` | Rendering a frame |
-  | Lock group | `obj/lock.cpp` | One worker's slice of object ticks and messages |
   | Lock globals | `obj/lock.cpp` | The global simulation step between tick cycles |
   | Save game | `main/save_load.cpp` | Saving, including autosaves |
   | Texture upload | `resource/load_material.cpp` | One texture upload step |
@@ -105,4 +104,30 @@ of exiting.
 
 | Date | Build | Paused frame time (median / p99) | Unpaused frame time (median / p99) | Max-speed sim rate (game s / wall s) | Menu idle CPU | Package power | Startup to menu |
 |---|---|---|---|---|---|---|---|
-| | M0 baseline | | | | | | |
+| 2026-10-23 | M0 baseline (normal speed, vsync on, 120 fps cap: not the standard settings) | not measured | 8.4 / 21.4 ms (105 fps mean; capped) | not measured | | | |
+
+### Late-game profile, M0 baseline (2026-10-23)
+
+Taken on the `benchmark` save at normal speed, unpaused, with vsync on and a 120 fps cap. Signpost
+numbers come from a 30 s `xctrace` recording; per-thread CPU numbers come from a 10 s `sample`.
+
+| Signpost | Per second | Median | p95 | p99 | Max | Share of one core |
+|---|---|---|---|---|---|---|
+| Render (includes the frame limiter and swap) | 105 | 7.75 ms | 15.7 ms | 20.6 ms | 26.6 ms | 93% |
+| Lock globals | 105 | 1.27 ms | 2.54 ms | 3.68 ms | 5.09 ms | 19% |
+| Animate | 105 | 0.55 ms | 0.91 ms | 1.15 ms | 6.24 ms | 6% |
+| Script tick, Client | 105 | 0.22 ms | 0.41 ms | 0.51 ms | 6.22 ms | 3% |
+| Script tick, Server | 105 | 0.08 ms | 0.14 ms | 0.19 ms | 0.33 ms | 1% |
+| Script GC, Client and Menu | 105 each | 0.02 ms | 0.04 ms | 0.06 ms | 0.11 ms | <1% |
+
+Frame-to-frame time: median 8.4 ms, p95 16.3 ms, p99 21.4 ms, max 55.7 ms.
+
+| Thread group | Threads | Cores on CPU | Notes |
+|---|---|---|---|
+| Simulation workers (`processing::process`) | 15 | 3.9 | 3.6 cores in `Object::think`, 3.1 of it in script component calls through `handleGeneric`/`wrapperFunc`; 0.8 in `findTargets`. 59% of their wall time is spent asleep in `threads::idle()`. |
+| Empire script threads (`runScriptThread`) | 13 | 1.6 | Through `emp_wrapperFunc`/`handleGeneric`. |
+| Empire message threads | 14 | 1.0 | `AsyncEmpireScriptCall::process`. |
+| Message threads (`messageProcess`) | 15 | 0.7 | Spinning on `ReadWriteMutex::readLock`/`try_lock` in `tickRandomMessages`. |
+| Animation threads | 13 | 0.4 | 97% asleep in a 1 ms poll loop. |
+| Main thread | 1 | 0.3 | 42% in the frame limiter's sleep, 18% waiting on read locks in `tickLockMessages`. |
+| Total | 80 | 7.9 | |

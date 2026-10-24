@@ -662,9 +662,14 @@ int _glfwPlatformGetKeyForChar(int chr) {
     _glfwInputKey(window, key, [event keyCode], GLFW_RELEASE, mods);
 }
 
+//Star Ruler 2: whether the last scroll event came from a trackpad or other device
+//with precise deltas, which the game reads to scale zooming
+int sr2PreciseScroll = 0;
+
 - (void)scrollWheel:(NSEvent *)event
 {
     double deltaX, deltaY;
+    sr2PreciseScroll = 0;
 
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
     if (floor(NSAppKitVersionNumber) >= NSAppKitVersionNumber10_7)
@@ -676,6 +681,7 @@ int _glfwPlatformGetKeyForChar(int chr) {
         {
             deltaX *= 0.1;
             deltaY *= 0.1;
+            sr2PreciseScroll = 1;
         }
     }
     else

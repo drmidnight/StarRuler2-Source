@@ -13,6 +13,10 @@ bool CAM_ROTATED = false;
 
 double OBJLOCK_ZOOMDIST = 5.0;
 
+//A trackpad gesture sends many small deltas that add up to far more than the
+//notches a mouse wheel sends for the same intent, so each unit zooms less
+const double PRECISE_ZOOM_SCALE = 0.35;
+
 class SmartCamera : Savable {
 	//Main engine camera
 	Camera camera;
@@ -83,7 +87,10 @@ class SmartCamera : Savable {
 	}
 
 	//Zoom with world plane
-	void zoom(int delta) {
+	void zoom(double delta) {
+		if(preciseScrolling)
+			delta *= PRECISE_ZOOM_SCALE;
+
 		//Get zoom speed
 		double factor;
 		if(settings::bInvertZoom)

@@ -39,6 +39,10 @@ void redirectCharKey(GLFWwindow*,unsigned);
 void redirectMouseButton(GLFWwindow*,int button, int action, int mods);
 void redirectMouseMove(GLFWwindow*,double x, double y);
 void redirectMouseWheel(GLFWwindow*,double x, double y);
+#ifdef __APPLE__
+//Set by the patched GLFW Cocoa backend for each scroll event
+extern "C" int sr2PreciseScroll;
+#endif
 void trackMouseOver(GLFWwindow*,int over);
 void glfwError(int, const char*);
 
@@ -574,6 +578,9 @@ void redirectMouseMove(GLFWwindow*, double x, double y) {
 }
 
 void redirectMouseWheel(GLFWwindow*, double x, double y) {
+#ifdef __APPLE__
+	driver->preciseScroll = sr2PreciseScroll != 0;
+#endif
 	driver->onScroll(x, y);
 }
 

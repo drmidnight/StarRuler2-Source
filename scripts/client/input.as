@@ -115,13 +115,26 @@ void onOverlayChanged(bool overlayOpen) {
 //Called whenever the mouse wheel is used on the 3D view.
 // x: Amount scrolled horizontally.
 // y: Amount scrolled vertically.
+//Trackpads send fractional scroll deltas. The remainder carries over to the next
+//event, so the GUI scrolls in whole steps the same way in both directions.
+double scrollRemainderX = 0.0, scrollRemainderY = 0.0;
+int scrollSteps(double delta, double &inout remainder) {
+	if((delta > 0.0) != (remainder > 0.0))
+		remainder = 0.0;
+	remainder += delta;
+	int steps = int(remainder);
+	remainder -= double(steps);
+	return steps;
+}
+
 void onMouseWheel(double x, double y) {
 	if(isGuiHovered() || ActiveCamera is null) {
 		MouseEvent evt;
 		evt.type = MET_Scrolled;
-		evt.x = int(floor(x));
-		evt.y = int(floor(y));
-		onMouseEvent(evt);
+		evt.x = scrollSteps(x, scrollRemainderX);
+		evt.y = scrollSteps(y, scrollRemainderY);
+		if(evt.x != 0 || evt.y != 0)
+			onMouseEvent(evt);
 		return;
 	}
 

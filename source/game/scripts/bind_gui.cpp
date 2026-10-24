@@ -185,6 +185,10 @@ void get_skinStyles(CScriptDictionary& map) {
 	});
 }
 
+bool getPreciseScrolling() {
+	return devices.driver->preciseScroll;
+}
+
 vec2i getMousePos() {
 	vec2i pos;
 	devices.driver->getMousePos(pos.x,pos.y);
@@ -593,6 +597,9 @@ void RegisterGuiBinds() {
 
 	bind("void set_mousePos(const vec2i &in)", asFUNCTION(setMousePos))
 		doc("Set the mouse position.", "New mouse position");
+
+	bind("bool get_preciseScrolling()", asFUNCTION(getPreciseScrolling))
+		doc("Whether the last scroll event came from a trackpad or other device with precise, fractional deltas.", "");
 
 	bind("void set_mouseLock(bool lock)", asFUNCTION(setMouseLock))
 		doc("Sets whether the cursor should be locked to the screen, if the user has enabled the feature.", "");

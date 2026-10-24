@@ -150,6 +150,8 @@ public:
 
 	int mouse_x, mouse_y;
 	int leftButton, rightButton, middleButton;
+	//Whether the last scroll event came from a trackpad or other device with precise deltas
+	bool preciseScroll;
 
 	virtual bool systemRandom(unsigned char* buffer, unsigned bytes) = 0;
 
@@ -212,7 +214,7 @@ public:
 
 	OSDriver() : shiftKey(false), altKey(false), ctrlKey(false),
 			win_width(0), win_height(0), mouse_x(0), mouse_y(0),
-			leftButton(false), rightButton(false), middleButton(false) {}
+			leftButton(false), rightButton(false), middleButton(false), preciseScroll(false) {}
 	virtual ~OSDriver() {}
 };
 

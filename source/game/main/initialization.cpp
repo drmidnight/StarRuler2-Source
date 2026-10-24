@@ -46,6 +46,7 @@
 #include "render/lighting.h"
 #include <stdio.h>
 #include <fstream>
+#include <atomic>
 
 namespace scripts {
 	void processEvents();
@@ -568,7 +569,7 @@ void bindScripts() {
 	}
 }
 
-volatile bool idleImageActive = false;
+std::atomic<bool> idleImageActive = false;
 threads::threadreturn threadcall idleProcessImages(void*) {
 	idleImageActive = true;
 	while(devices.library.hasQueuedImages()) {
@@ -579,7 +580,7 @@ threads::threadreturn threadcall idleProcessImages(void*) {
 	return 0;
 }
 
-volatile bool idleSoundsActive = false;
+std::atomic<bool> idleSoundsActive = false;
 threads::threadreturn threadcall idleProcessSounds(void*) {
 	idleSoundsActive = true;
 	while(devices.library.hasQueuedSounds()) {
@@ -590,7 +591,7 @@ threads::threadreturn threadcall idleProcessSounds(void*) {
 	return 0;
 }
 
-volatile bool idleHullsActive = false;
+std::atomic<bool> idleHullsActive = false;
 threads::threadreturn threadcall idleComputeHulls(void*) {
 	double tstart = devices.driver->getAccurateTime();
 
@@ -1487,7 +1488,7 @@ void initGame() {
 		passSettings(devices.scripts.server);
 		passSettings(devices.scripts.client);
 		
-		volatile bool done = false;
+		std::atomic<bool> done = false;
 
 		if(isLoadedGame) {
 			//LoadGame does script init() in the right place

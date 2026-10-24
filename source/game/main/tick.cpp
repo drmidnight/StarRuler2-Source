@@ -18,6 +18,7 @@
 #include <cmath>
 #include <stdio.h>
 #include <stdint.h>
+#include <atomic>
 
 extern unsigned drawnSteps, bufferFlushes;
 
@@ -203,7 +204,7 @@ double animateSomeNodes(int maxNodes) {
 	return devices.driver->getAccurateTime() - start;
 }
 
-volatile bool EndAnimationThreads = false;
+std::atomic<bool> EndAnimationThreads = false;
 threads::threadreturn threadcall animateNodes(void* arg) {
 	enterSection(NS_Animation);
 	double& logTime = *(double*)arg;

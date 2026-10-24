@@ -603,10 +603,10 @@ static void fillProjectiles() {
 	pull_index = 0;
 }
 
-volatile bool ProjectilesActive = false;
-volatile bool EndProjectiles = false;
-volatile bool PauseProjectiles = false;
-volatile bool ProjectilesPaused = false;
+std::atomic<bool> ProjectilesActive = false;
+std::atomic<bool> EndProjectiles = false;
+std::atomic<bool> PauseProjectiles = false;
+std::atomic<bool> ProjectilesPaused = false;
 class ProcessProjectiles : public processing::Action {
 	bool host, active;
 public:
@@ -616,7 +616,6 @@ public:
 	~ProcessProjectiles() {
 		//This happens when the game is ending. We may not complete an entire cycle at the right time.
 		if(host) {
-			std::atomic_thread_fence(std::memory_order_release);
 			ProjectilesActive = false;
 		}
 		else if(active)
@@ -630,9 +629,7 @@ public:
 			ProjectilesActive = true;
 
 			if(PauseProjectiles) {
-				std::atomic_thread_fence(std::memory_order_release);
 				ProjectilesActive = false;
-				std::atomic_thread_fence(std::memory_order_release);
 				ProjectilesPaused = true;
 				return false;
 			}
@@ -649,7 +646,6 @@ public:
 					processing::queueAction(new ProcessProjectiles(false));
 			}
 			else {
-				std::atomic_thread_fence(std::memory_order_release);
 				ProjectilesActive = false;
 				return false;
 			}
@@ -661,7 +657,6 @@ public:
 			int index = pull_index++;
 			if(index >= (int)source->size()) {
 				if(host) {
-					std::atomic_thread_fence(std::memory_order_release);
 					ProjectilesActive = false;
 					return false;
 				}
@@ -713,7 +708,6 @@ void stopProjectiles() {
 	while(ProjectilesActive)
 		threads::sleep(1);
 	activeProjThreads.wait(0);
-	std::atomic_thread_fence(std::memory_order_acquire);
 	source->clear(); source->shrink_to_fit();
 	dest->clear(); dest->shrink_to_fit();
 	for(auto i = queuedProjs.begin(), end = queuedProjs.end(); i != end; ++i)
@@ -750,7 +744,6 @@ void pauseProjectiles() {
 	activeProjThreads.wait(0);
 	while(!ProjectilesPaused && ProjectilesActive)
 		threads::sleep(1);
-	std::atomic_thread_fence(std::memory_order_acquire);
 }
 
 void resumeProjectiles() {

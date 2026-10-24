@@ -9,6 +9,7 @@
 #include "design/projectiles.h"
 #include "empire.h"
 #include <deque>
+#include <atomic>
 
 extern threads::atomic_int remainingEmpireMessages;
 
@@ -19,7 +20,7 @@ threads::threadreturn threadcall messageProcess(void* data);
 threads::threadreturn threadcall empireMessageProcess(void* data);
 
 int threadCount = 0;
-bool stopProcessing = false, pauseProcessing = false, pauseMessageHandlers = false;
+std::atomic<bool> stopProcessing = false, pauseProcessing = false, pauseMessageHandlers = false;
 threads::Signal threadsActive, msgHandlersActive;
 
 threads::Mutex actionLock;

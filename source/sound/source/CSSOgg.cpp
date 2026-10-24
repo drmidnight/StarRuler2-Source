@@ -13,6 +13,7 @@
 #include <vector>
 #include <stdio.h>
 #include <string.h>
+#include <atomic>
 
 //==========
 //Much of this loader is taken from "PlayOggVorbis.cpp" in the OpenAL SDK
@@ -57,7 +58,7 @@ LPOVPCMSEEK			fn_ov_pcm_seek_lap = NULL;
 LPOVPCMTELL			fn_ov_pcm_tell = NULL;
 
 
-volatile int g_bVorbisInit = 0;
+std::atomic<int> g_bVorbisInit = 0;
 threads::Mutex vorbisInitLock;
 
 void InitVorbisFile()

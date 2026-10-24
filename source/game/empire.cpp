@@ -225,18 +225,19 @@ void Empire::cacheVision() {
 
 extern threads::atomic_int remainingMessages;
 void Empire::processMessages(unsigned maxMessages) {
-	if(messages.empty())
+	if(!hasMessages())
 		return;
 
 	if(!processLock.try_lock())
 		return;
 
-	while(maxMessages-- && !messages.empty()) {
+	while(maxMessages-- && hasMessages()) {
 		msgLock.lock();
 		EmpireMessage* msg = nullptr;
 		if(!messages.empty()) {
 			msg = messages.front();
 			messages.pop_front();
+			messageCount.store(messages.size(), std::memory_order_relaxed);
 		}
 		msgLock.release();
 
@@ -257,6 +258,7 @@ void Empire::queueMessage(EmpireMessage* msg) {
 	msgLock.lock();
 	++remainingMessages;
 	messages.push_back(msg);
+	messageCount.store(messages.size(), std::memory_order_relaxed);
 	msgLock.release();
 }
 

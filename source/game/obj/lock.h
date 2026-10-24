@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "threads.h"
 #include "obj/object.h"
 #include <set>
@@ -22,6 +23,9 @@ struct LockGroup {
 	threads::Mutex addMutex;
 
 	std::deque<ObjectMessage*> messages;
+	//The size of messages, to check for work without taking messageLock
+	std::atomic<unsigned> messageCount;
+	bool hasMessages() const { return messageCount.load(std::memory_order_relaxed) != 0; }
 	std::unordered_map<Object*, std::vector<ObjectMessage*>*> deferredMessages;
 	threads::Mutex messageLock;
 

@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "threads.h"
 #include "general_states.h"
 #include "design/subsystem.h"
@@ -74,6 +75,9 @@ public:
 
 	threads::Mutex msgLock, processLock;
 	std::deque<EmpireMessage*> messages;
+	//The size of messages, to check for work without taking msgLock
+	std::atomic<unsigned> messageCount;
+	bool hasMessages() const { return messageCount.load(std::memory_order_relaxed) != 0; }
 	void processMessages(unsigned maxMessages = 0xffffffff);
 	void queueMessage(EmpireMessage* msg);
 

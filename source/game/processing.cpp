@@ -25,8 +25,9 @@ threads::Signal threadsActive, msgHandlersActive;
 
 threads::Mutex actionLock;
 std::deque<Action*> process_queue;
-
 std::vector<Action*> isolation_queue;
+//Queue sizes, to check for work without taking actionLock
+std::atomic<size_t> processQueued, isolationQueued;
 
 #ifdef PROFILE_PROCESSING
 Threaded(ProcessingData*) threadProc;
@@ -37,17 +38,19 @@ unsigned idleObjectTickCount = 25, activeObjectTickCount = 300;
 void queueAction(Action* action) {
 	actionLock.lock();
 	process_queue.push_back(action);
+	processQueued.store(process_queue.size(), std::memory_order_relaxed);
 	actionLock.release();
 }
 
 void queueIsolationAction(Action* action) {
 	actionLock.lock();
 	isolation_queue.push_back(action);
+	isolationQueued.store(isolation_queue.size(), std::memory_order_relaxed);
 	actionLock.release();
 }
 
 void runIsolation() {
-	if(isolation_queue.empty())
+	if(isolationQueued.load(std::memory_order_relaxed) == 0)
 		return;
 	processing::pause();
 	actionLock.lock();
@@ -56,18 +59,20 @@ void runIsolation() {
 		delete *it;
 	}
 	isolation_queue.clear();
+	isolationQueued = 0;
 	actionLock.release();
 	processing::resume();
 }
 
 Action* popAction() {
-	if(process_queue.empty())
+	if(processQueued.load(std::memory_order_relaxed) == 0)
 		return 0;
 	actionLock.lock();
 	Action* action = 0;
 	if(!process_queue.empty()) {
 		action = process_queue.back();
 		process_queue.pop_back();
+		processQueued.store(process_queue.size(), std::memory_order_relaxed);
 	}
 	actionLock.release();
 	return action;
@@ -113,6 +118,7 @@ void clear() {
 	foreach(it, process_queue)
 		delete *it;
 	process_queue.clear();
+	processQueued = 0;
 }
 
 void pause() {
@@ -289,7 +295,7 @@ threads::threadreturn threadcall empireMessageProcess(void* data) {
 
 	while(!stopProcessing) {
 		if(hasRemainingMessages()) {
-			if(!emp->messages.empty()) {
+			if(emp->hasMessages()) {
 				emp->processMessages();
 			}
 			else {

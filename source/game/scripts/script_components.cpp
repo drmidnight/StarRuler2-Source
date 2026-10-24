@@ -696,7 +696,7 @@ static GenericValue wrapperFunc(void* arg, GenericCallData& args) {
 #ifdef LOG_SLOW_ASYNC_CALLS
 							wasFast = false;
 #endif
-							if(!activeGroup->messages.empty())
+							if(activeGroup->hasMessages())
 								activeGroup->processMessages(1);
 							else
 								threads::sleep(0);

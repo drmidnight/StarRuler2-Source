@@ -34,6 +34,8 @@ threads::atomic_int remainingMessages, queuedChildren;
 std::vector<LockGroup*> lockGroups;
 
 std::deque<LockGroup*> lockQueue;
+//The size of lockQueue, to check for work without taking lockQueueLock
+std::atomic<size_t> lockQueueSize;
 
 #ifdef PROFILE_LOCKS
 threads::Mutex lockQueueLock("lockQueueLock");
@@ -299,6 +301,7 @@ bool updateLockGlobals(double time) {
 	lockQueueLock.lock();
 	foreach(it, lockGroups)
 		lockQueue.push_back(*it);
+	lockQueueSize.store(lockQueue.size(), std::memory_order_relaxed);
 	lockQueueLock.release();
 	lockGlobalLock.release();
 	return true;
@@ -316,7 +319,7 @@ void tickRandomMessages(int limit) {
 	for(unsigned i = 0; i < count; ++i) {
 		LockGroup* lock = lockGroups[(i+off) % count];
 
-		if(!lock->messages.empty() && !lock->hasLock()) {
+		if(lock->hasMessages() && !lock->hasLock()) {
 			devices.scripts.server->threadedCallMutex.readLock();
 			if(lock->mutex.try_lock()) {
 				activeLockGroup = lock;
@@ -349,7 +352,7 @@ void tickLockMessages(LockGroup* lock, int limit) {
 	if(activeLockGroup)
 		throw "Can't lock multiple lock groups.";
 
-	if(!lock->messages.empty()) {
+	if(lock->hasMessages()) {
 		devices.scripts.server->threadedCallMutex.readLock();
 		if(lock->mutex.try_lock()) {
 			activeLockGroup = lock;
@@ -364,7 +367,7 @@ void tickLockMessages(LockGroup* lock, int limit) {
 //Find a random lock group that's still queued up for ticking and tick it, or
 //update global data and requeue if the queue is empty.
 bool tickRandomLock(double time, int limit) {
-	if(lockQueue.empty()) {
+	if(lockQueueSize.load(std::memory_order_relaxed) == 0) {
 		if(tickingLocks == 0)
 			return updateLockGlobals(time);
 		else
@@ -385,6 +388,7 @@ bool tickRandomLock(double time, int limit) {
 		if(lock)
 			++tickingLocks;
 	}
+	lockQueueSize.store(lockQueue.size(), std::memory_order_relaxed);
 	lockQueueLock.release();
 
 	if(!lock)
@@ -397,6 +401,7 @@ bool tickRandomLock(double time, int limit) {
 	if(!lock->process(time, limit)) {
 		lockQueueLock.lock();
 		lockQueue.push_back(lock);
+		lockQueueSize.store(lockQueue.size(), std::memory_order_relaxed);
 		lockQueueLock.release();
 	}
 
@@ -412,6 +417,7 @@ void LockGroup::addMessage(ObjectMessage* message) {
 	remainingMessages++;
 	messageLock.lock();
 	messages.push_back(message);
+	messageCount.store(messages.size(), std::memory_order_relaxed);
 	messageLock.release();
 }
 
@@ -425,7 +431,7 @@ void LockGroup::add(Object* obj) {
 }
 
 void LockGroup::processMessages(int limit) {
-	while(!messages.empty() && limit--) {
+	while(hasMessages() && limit--) {
 		messageLock.lock();
 			if(messages.empty()) {
 				messageLock.release();
@@ -434,6 +440,7 @@ void LockGroup::processMessages(int limit) {
 
 			ObjectMessage* msg = messages.front();
 			messages.pop_front();
+			messageCount.store(messages.size(), std::memory_order_relaxed);
 		messageLock.release();
 
 		if(msg->object->lockGroup == this) {
@@ -715,7 +722,7 @@ bool LockGroup::process(double time, int limit) {
 
 				++i;
 
-				if(!messages.empty())
+				if(hasMessages())
 					processMessages();
 
 				//We need to sleep periodically to guarantee progress at high cpu utilization
@@ -759,6 +766,7 @@ void initLocks(unsigned lockCount) {
 		lockGroups.push_back(lock);
 		lockQueue.push_back(lock);
 	}
+	lockQueueSize.store(lockQueue.size(), std::memory_order_relaxed);
 	lockQueueLock.release();
 }
 
@@ -767,6 +775,7 @@ void destroyLocks() {
 		delete *it;
 	lockGroups.clear();
 	lockQueue.clear();
+	lockQueueSize = 0;
 }
 
 LockGroup* lockObject(Object* obj, bool priority) {

@@ -67,7 +67,7 @@ endif
 
 CXXFLAGS += -std=c++20
 CXXFLAGS += -Wall -Wno-invalid-offsetof -Wno-switch -Wno-reorder
-CXXFLAGS += -isystem./source/network/include
+CXXFLAGS += -I./source/network/include
 CXXFLAGS += -I./source/os/include
 
 #Source code files

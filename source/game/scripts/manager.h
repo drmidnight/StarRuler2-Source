@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "angelscript.h"
 #include "threads.h"
 #include <string>
@@ -197,10 +198,12 @@ public:
 	std::map<std::string, Module*> modules;
 	std::map<std::string, File*> files;
 
-	threads::atomic_int scriptThreadsActive;
+	//Script threads and the GC pause each other with a store followed by a load of the
+	//other's variable, which is only safe with sequentially consistent atomics
+	std::atomic<int> scriptThreadsActive;
 	threads::atomic_int scriptThreadsExistent;
-	volatile bool pauseScripts;
-	volatile bool clearScripts;
+	std::atomic<bool> pauseScripts;
+	std::atomic<bool> clearScripts;
 
 	asUINT prevGCSize;
 

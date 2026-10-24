@@ -68,7 +68,19 @@ class GLFWDriver : public OSDriver {
 
 public:
 #ifndef WIN_MODE
-	timeval start_time;
+	//Nanoseconds on a monotonic clock, which unlike the wall clock never jumps
+	uint64_t start_time;
+
+	static uint64_t monotonicNanoseconds() {
+#ifdef __APPLE__
+		//Uptime, which also pauses while the Mac sleeps
+		return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+#else
+		timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		return (uint64_t)now.tv_sec * 1000000000ull + (uint64_t)now.tv_nsec;
+#endif
+	}
 #else
 	ULARGE_INTEGER start_time;
 
@@ -402,7 +414,7 @@ public:
 
 	void resetTimer() {
 #ifndef WIN_MODE
-		gettimeofday(&start_time, 0);
+		start_time = monotonicNanoseconds();
 #else
 		FILETIME cur_time;
 		GetSystemTimeAsFileTime(&cur_time);
@@ -418,12 +430,7 @@ public:
 
 	int getTime() const {
 #ifndef WIN_MODE
-		timeval cur_time;
-		gettimeofday(&cur_time, 0);
-
-		return (int)(
-			1000 * (cur_time.tv_sec - start_time.tv_sec)
-			+ (cur_time.tv_usec - start_time.tv_usec) / 1000);
+		return (int)((monotonicNanoseconds() - start_time) / 1000000);
 #else
 
 		FILETIME cur_ftime;
@@ -441,11 +448,7 @@ public:
 
 	double getAccurateTime() const {
 #ifndef WIN_MODE
-		timeval cur_time;
-		gettimeofday(&cur_time, 0);
-
-		return (double)(cur_time.tv_sec - start_time.tv_sec)
-			+ (double)(cur_time.tv_usec - start_time.tv_usec)/1000000.0;
+		return (double)(monotonicNanoseconds() - start_time) / 1.0e9;
 #else
 		LARGE_INTEGER cur_time, cur_freq;
 		QueryPerformanceCounter(&cur_time);

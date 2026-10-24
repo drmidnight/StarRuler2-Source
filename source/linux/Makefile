@@ -379,6 +379,12 @@ $(BINDIR)/$(BIN): makelibs $(OBJ_FILES) $(LIB_FILES) $(COPY_LIBS)
 	@$(CC) $(CXXFLAGS) $(LDFLAGS) $(OBJ_FILES) $(LIB_FILES) -o $@
 	$(if $(DSYM),@dsymutil $@ -o $@.dSYM)
 
+#Tests for the threading primitives
+test_threads: makelibs
+	@mkdir -p $(BINDIR)
+	@$(CC) $(CXXFLAGS) source/os/test/threads_test.cpp $(LIBDIR)/libos.a -lpthread -o $(BINDIR)/test_threads
+	$(BINDIR)/test_threads
+
 makelibs:
 	@mkdir -p $(BINDIR)
 	@$(MAKE) -s -f ./source/os/gcc/Makefile compile

@@ -48,7 +48,7 @@ struct LocklessType {
 				break;
 			stored.s = chk;
 		} while(true);
-		return stored.s;
+		return local.real;
 	}
 
 	T get() {
@@ -133,7 +133,7 @@ struct LocklessType {
 
 	T interp(T toward, double percent) {
 		return set([&](T p) -> T { 
-			return (T)(((double)(toward - p) * percent) + (double)toward);
+			return (T)(((double)(toward - p) * percent) + (double)p);
 		});
 	}
 

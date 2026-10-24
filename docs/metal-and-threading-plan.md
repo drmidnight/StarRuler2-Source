@@ -373,6 +373,8 @@ if upstream fixed it; otherwise re-implement it in `glfw_driver.cpp`, not by pat
 | Retina size | Rendering used window size | Handled by the hint `GLFW_COCOA_RETINA_FRAMEBUFFER` (see M4.4). |
 | Borderless fullscreen | Fullscreen at the desktop mode | Use `glfwSetWindowMonitor` with the current video mode, or a borderless window. Test Spaces and the notch. |
 | Cursor visible while captured, warps not suppressing mouse events | Cursor and mouse behaviour while the pointer is locked | Use `GLFW_CURSOR_DISABLED` + `GLFW_RAW_MOUSE_MOTION`. Re-test edge-pan and camera rotation. |
+| `sr2PreciseScroll` (commit `0147374`) | Tells the game whether a scroll event came from a trackpad, so zoom can scale trackpad deltas | 3.4 still doesn't expose `hasPreciseScrollingDeltas`. Re-apply in `scrollWheel:`, or read it in `glfw_driver` with an `NSEvent` local monitor so GLFW stays unpatched. |
+| `sr2MagnifyCallback` (commit `161f9fb`) | Trackpad pinch to zoom | 3.4 has no gesture API. Re-apply `magnifyWithEvent:`, or use an `NSEvent` local monitor for `NSEventTypeMagnify` in `glfw_driver`. |
 
 ### M4.3 API changes in `glfw_driver.cpp`
 - Use the framebuffer-size callback for the viewport and render targets, and the window-size callback

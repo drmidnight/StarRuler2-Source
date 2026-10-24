@@ -541,7 +541,6 @@ void LockGroup::acquireChildren() {
 }
 
 bool LockGroup::process(double time, int limit) {
-	SIGNPOST_INTERVAL("Lock group");
 #ifdef OBJECT_LOCK_NAGGING
 	if(activeLockGroup && activeLockGroup != this)
 		throw "Trying to process a LockGroup with an object locked.";

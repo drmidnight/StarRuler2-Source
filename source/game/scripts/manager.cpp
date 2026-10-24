@@ -359,8 +359,10 @@ const std::vector<std::string>& loadScript(const std::string& filename, size_t& 
 		}
 	}
 	assert(script);
+	//get() loads the file under the script's lock, which also makes size valid to read
+	auto& lines = script->get();
 	size = script->size;
-	return script->get();
+	return lines;
 }
 
 void clearCachedScripts() {

@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <vector>
 #include <functional>
+#include <atomic>
 
 #ifndef MAX_GENERIC_ARGUMENTS
 #define MAX_GENERIC_ARGUMENTS 16
@@ -58,7 +59,17 @@ struct GenericValue {
 		void* ptr;
 	};
 	bool managed;
-	volatile bool asyncReturned;
+	//Set once an async call has filled in the value, while the calling thread polls it.
+	//Only access it through the functions below, which order it against the value.
+	bool asyncReturned;
+
+	void setAsyncReturned() {
+		std::atomic_ref<bool>(asyncReturned).store(true, std::memory_order_release);
+	}
+
+	bool isAsyncReturned() {
+		return std::atomic_ref<bool>(asyncReturned).load(std::memory_order_acquire);
+	}
 
 	template<class T>
 	T& get() {

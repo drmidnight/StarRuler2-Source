@@ -476,12 +476,11 @@ public:
 			script = object->script;
 		if(!script || (fromGUI && method->restricted && !devices.network->getCurrentPlayer().controls(object->owner))) {
 			if(retValue) {
-				std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
-				retValue->asyncReturned = true;
-
 #ifdef LOG_SLOW_ASYNC_CALLS
 				if(retTime) *retTime = devices.driver->getAccurateTime();
 #endif
+				//The caller may return as soon as this is set, so it comes last
+				retValue->setAsyncReturned();
 			}
 			return;
 		}
@@ -519,8 +518,7 @@ public:
 #ifdef LOG_SLOW_ASYNC_CALLS
 			if(retTime) *retTime = devices.driver->getAccurateTime();
 #endif
-			std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
-			retValue->asyncReturned = true;
+			retValue->setAsyncReturned();
 		}
 		else {
 			method->desc.call(cl);
@@ -668,7 +666,7 @@ static GenericValue wrapperFunc(void* arg, GenericCallData& args) {
 
 					if(!activeGroup) {
 						unsigned spins = ASYNC_SPIN_COUNT;
-						while(!retVal.asyncReturned) {
+						while(!retVal.isAsyncReturned()) {
 							if(!obj->lockGroup->hasLock())
 								tickLockMessages(obj->lockGroup);
 							else
@@ -686,7 +684,7 @@ static GenericValue wrapperFunc(void* arg, GenericCallData& args) {
 					else {
 						//Fast path: Often, the ret value will have been produced by the end of the loop
 						unsigned spins = 0;
-						while(!retVal.asyncReturned) {
+						while(!retVal.isAsyncReturned()) {
 							++spins;
 							if(spins == FAST_SPIN_COUNT)
 								break;
@@ -694,7 +692,7 @@ static GenericValue wrapperFunc(void* arg, GenericCallData& args) {
 
 						//Slow path: Perhaps it can't be resolved, or will take a lot longer than we'd like
 						// This can involve a lot of other messages taking a very long time to return
-						while(!retVal.asyncReturned) {
+						while(!retVal.isAsyncReturned()) {
 #ifdef LOG_SLOW_ASYNC_CALLS
 							wasFast = false;
 #endif
@@ -708,9 +706,6 @@ static GenericValue wrapperFunc(void* arg, GenericCallData& args) {
 						}
 					}
 
-					//arm64: make sure the returned value is visible now that the flag has been seen
-					std::atomic_thread_fence(std::memory_order_acquire);
-					
 #if defined(LOG_SLOW_ASYNC_CALLS) || defined(PROFILE_ASYNC_CALLS)
 					double end = devices.driver->getAccurateTime();
 					double dur = end - start;
@@ -755,22 +750,24 @@ static GenericValue wrapperFunc(void* arg, GenericCallData& args) {
 
 class ObjectWaitMessage : public ObjectMessage {
 public:
-	volatile bool* done;
+	//Points into the waiting thread's stack, which is gone once it sees the flag set
+	std::atomic<bool>* done;
 
-	ObjectWaitMessage(Object* obj, volatile bool* done)
+	ObjectWaitMessage(Object* obj, std::atomic<bool>* done)
 		: ObjectMessage(obj), done(done) {
 		object->grab();
 	}
 
 	void process() {
-		std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
-		*done = true;
+		done->store(true, std::memory_order_release);
+		done = nullptr;
 	}
 
 	~ObjectWaitMessage() {
 		object->drop();
-		std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
-		*done = true;
+		//Release the waiter if the message was dropped without being processed
+		if(done)
+			done->store(true, std::memory_order_release);
 	}
 };
 
@@ -784,19 +781,18 @@ void objectWait(Object* obj) {
 	if(!obj->isInitialized())
 		return;
 
-	volatile bool done = false;
+	std::atomic<bool> done = false;
 	auto* msg = new ObjectWaitMessage(obj, &done);
 	obj->lockGroup->addMessage(msg);
 
 	LockGroup* activeGroup = getActiveLockGroup();
-	while(!done) {
+	while(!done.load(std::memory_order_acquire)) {
 		threads::sleep(0);
 		if(activeGroup)
 			activeGroup->processMessages(4);
 		else
 			tickRandomMessages(10);
 	}
-	std::atomic_thread_fence(std::memory_order_acquire);
 }
 
 bool getSafeCallWait() {
@@ -1060,8 +1056,7 @@ public:
 			if(script) //Attempted to call restricted method
 				info( format("Cannot call method '$1' on other empires.", method->wrapped.name).c_str() );
 			if(retValue) {
-				std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
-				retValue->asyncReturned = true;
+				retValue->setAsyncReturned();
 			}
 			return;
 		}
@@ -1093,8 +1088,7 @@ public:
 				type->copy(*retValue, ret);
 			else
 				*retValue = ret;
-			std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
-			retValue->asyncReturned = true;
+			retValue->setAsyncReturned();
 		}
 		else {
 			method->desc.call(cl);
@@ -1190,7 +1184,7 @@ static GenericValue emp_wrapperFunc(void* arg, GenericCallData& args) {
 			//Wait for async data return
 			if(hasReturn) {
 				auto* activeGroup = getActiveLockGroup();
-				while(!retVal.asyncReturned) {
+				while(!retVal.isAsyncReturned()) {
 					threads::sleep(0);
 					if(activeGroup)
 						activeGroup->processMessages(4);

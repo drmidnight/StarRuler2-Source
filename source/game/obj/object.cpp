@@ -20,6 +20,7 @@
 #include "physics/physics_world.h"
 #include "general_states.h"
 #include <float.h>
+#include <atomic>
 
 threads::ReadWriteMutex objectsLock;
 std::unordered_map<unsigned,Object*> objects;
@@ -267,7 +268,7 @@ unsigned Object::updateVision(Object* target, unsigned depth) {
 		if(distSQ < target->sightRange * target->sightRange)
 			mask |= target->owner->mask;
 		if(distSQ < sightRange * sightRange)
-			target->donatedVision |= owner->mask;
+			std::atomic_ref<unsigned>(target->donatedVision).fetch_or(owner->mask, std::memory_order_relaxed);
 	}
 
 	if(depth > 0)
@@ -324,13 +325,15 @@ double Object::think(double seconds) {
 							if(item.type != PIT_Object)
 								return;
 							Object* other = item.object;
-							if(other->alwaysVisible || (other->donatedVision & mask))
+							//Objects in other lock groups donate vision concurrently
+							std::atomic_ref<unsigned> donated(other->donatedVision);
+							if(other->alwaysVisible || (donated.load(std::memory_order_relaxed) & mask))
 								return;
 
 							double distance = from.distanceToSQ(other->position);
 							if(distance < (dist + other->radius) * (dist + other->radius)) {
 								if(distance < (other->seeableRange + other->radius) * (other->seeableRange + other->radius))
-									other->donatedVision |= mask;
+									donated.fetch_or(mask, std::memory_order_relaxed);
 							}
 						},
 						~owner->mask );
@@ -346,11 +349,11 @@ double Object::think(double seconds) {
 			//Find nearby objects that can see us
 			unsigned newVisionMask = 1;
 			if(owner && owner->visionMask) {
-				newVisionMask |= donatedVision | owner->mask;
-				donatedVision = owner->mask;
+				//Take the donations and reset them in one step, so none made meanwhile are lost
+				newVisionMask |= std::atomic_ref<unsigned>(donatedVision).exchange(owner->mask, std::memory_order_relaxed) | owner->mask;
 			}
 			else {
-				newVisionMask |= donatedVision;
+				newVisionMask |= std::atomic_ref<unsigned>(donatedVision).load(std::memory_order_relaxed);
 			}
 
 			unsigned sightMask = newVisionMask;

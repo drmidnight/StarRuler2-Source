@@ -16,14 +16,56 @@ void async(std::function<int()> f) {
 	createThread(asyncWrapper, new std::function<int()>(f));
 }
 
-const unsigned Mutex::spinCount = 5;
-const unsigned ReadWriteMutex::spinCount = 8;
-const unsigned Signal::spinCount = 3;
+const unsigned Mutex::spinCount = 64;
+const unsigned Signal::spinCount = 64;
+
+//Tells the core we are spinning, so a sibling or the lock holder can make progress
+static inline void cpuRelax() {
+#if defined(__aarch64__)
+	__builtin_arm_yield();
+#elif defined(__x86_64__) || defined(__i386__)
+	__builtin_ia32_pause();
+#endif
+}
 
 void Mutex::lock() {
 	int id = getThreadID();
-	if(owningThread != id) {
-		owningThread.wait_compare_exchange(id, invalidThreadID, spinCount);
+	if(owningThread.get() == id) {
+		++lockCount;
+	}
+	else {
+#ifdef __APPLE__
+		bool locked = false;
+		for(unsigned i = 0; i < spinCount && !locked; ++i) {
+			locked = os_unfair_lock_trylock(&impl);
+			if(!locked)
+				cpuRelax();
+		}
+		if(!locked)
+			os_unfair_lock_lock(&impl);
+#else
+		impl.lock();
+#endif
+		owningThread = id;
+		lockCount = 1;
+	}
+
+#ifdef PROFILE_LOCKS
+	++profileCount;
+#endif
+}
+
+bool Mutex::try_lock() {
+	int id = getThreadID();
+	if(owningThread.get() != id) {
+#ifdef __APPLE__
+		if(!os_unfair_lock_trylock(&impl))
+			return false;
+#else
+		if(!impl.try_lock())
+			return false;
+#endif
+		owningThread = id;
 		lockCount = 1;
 	}
 	else {
@@ -31,140 +73,94 @@ void Mutex::lock() {
 	}
 
 #ifdef PROFILE_LOCKS
-		++profileCount;
+	++profileCount;
 #endif
-}
-
-bool Mutex::try_lock() {
-	int id = getThreadID();
-	if(owningThread != id) {
-		for(unsigned i = 0; i < spinCount; ++i) {
-			if(owningThread.compare_exchange_strong(id, invalidThreadID) == invalidThreadID) {
-				lockCount = 1;
-#ifdef PROFILE_LOCKS
-				++profileCount;
-#endif
-				return true;
-			}
-		}
-		return false;
-	}
-	else {
-		++lockCount;
-#ifdef PROFILE_LOCKS
-		++profileCount;
-#endif
-		return true;
-	}
+	return true;
 }
 
 void Mutex::release() {
 	assert(lockCount > 0);
-	if(--lockCount == 0)
+	if(--lockCount == 0) {
 		owningThread = invalidThreadID;
+#ifdef __APPLE__
+		os_unfair_lock_unlock(&impl);
+#else
+		impl.unlock();
+#endif
+	}
 }
 
 bool Mutex::hasLock() {
 	return owningThread == getThreadID();
 }
 
-void atomic_int::wait_compare_exchange(int xchg, int compareTo, const int spinCount) {
-	int spins = 0;
-	while(compare_exchange_strong(xchg, compareTo) != compareTo) {
-		++spins;
-		if(spins == spinCount) {
-			sleep(0);
-			spins = 0;
-		}
-	}
+//Each thread records which read-write mutexes it holds, how many times, and whether
+//it holds the write lock, so recursive locks only take the underlying lock once
+struct HeldRWLock {
+	ReadWriteMutex* lock;
+	unsigned count;
+	bool write;
+};
+static const int maxHeldRWLocks = 16;
+Threaded(HeldRWLock) heldRWLocks[maxHeldRWLocks];
+Threaded(int) heldRWLockCount = 0;
+
+static HeldRWLock* findHeldRWLock(ReadWriteMutex* lock) {
+	for(int i = heldRWLockCount - 1; i >= 0; --i)
+		if(heldRWLocks[i].lock == lock)
+			return &heldRWLocks[i];
+	return nullptr;
 }
 
-Threaded(ReadWriteMutex*) rw_locks[8];
-Threaded(unsigned) rw_lockCounts[8];
-Threaded(int) rw_head = -1;
-
-unsigned& get_rw_thread_lockCount(ReadWriteMutex* lock) {
-	for(int i = rw_head; i >= 0; --i)
-		if(rw_locks[i] == lock)
-			return rw_lockCounts[i];
-	++rw_head;
-	rw_locks[rw_head] = lock;
-	rw_lockCounts[rw_head] = 0;
-	assert(rw_head < 8);
-	return rw_lockCounts[rw_head];
+static void addHeldRWLock(ReadWriteMutex* lock, bool write) {
+	assert(heldRWLockCount < maxHeldRWLocks);
+	heldRWLocks[heldRWLockCount++] = { lock, 1, write };
 }
 
-void remove_rw_thread_lockCount(ReadWriteMutex* lock) {
-	for(int i = rw_head; i >= 0; --i) {
-		if(rw_locks[i] == lock)  {
-			for(int j = i; j < rw_head; ++j) {
-				rw_locks[j] = rw_locks[j+1];
-				rw_lockCounts[j] = rw_lockCounts[j+1];
-			}
-			--rw_head;
-		}
-	}
+static void removeHeldRWLock(HeldRWLock* held) {
+	int index = (int)(held - heldRWLocks);
+	for(int i = index; i < heldRWLockCount - 1; ++i)
+		heldRWLocks[i] = heldRWLocks[i+1];
+	--heldRWLockCount;
 }
 
 void ReadWriteMutex::writeLock() {
-	auto id = getThreadID();
-	unsigned& threadLockCount = get_rw_thread_lockCount(this);
-	if(owningThread != id) {
-		//Acquire right to increase readCount
-		owningThread.wait_compare_exchange(id, invalidThreadID, spinCount);
-
+	HeldRWLock* held = findHeldRWLock(this);
+	if(held) {
 		//Cannot upgrade locks to write locks, this creates deadlocks
-		if(threadLockCount > 0)
+		if(!held->write)
 			throw "Upgrading a read lock is invalid.";
-
-		//Wait until reading threads are done
-		unsigned spins = 0;
-		while(readCount > (int)threadLockCount) {
-			++spins;
-			if(spins == spinCount) {
-				sleep(0);
-				spins = 0;
-			}
-		}
-
-		++readCount;
+		++held->count;
 	}
 	else {
-		++readCount;
+#ifdef _MSC_VER
+		impl.lock();
+#else
+		pthread_rwlock_wrlock(&impl);
+#endif
+		owningThread = getThreadID();
+		addHeldRWLock(this, true);
 	}
-
-	++threadLockCount;
 
 #ifdef PROFILE_LOCKS
 	++profileWriteCount;
 #endif
 }
 
-bool ReadWriteMutex::hasLock() {
-	for(int i = rw_head; i >= 0; --i)
-		if(rw_locks[i] == this)
-			return rw_lockCounts[i] != 0;
-	return false;
-}
-
-bool ReadWriteMutex::hasWriteLock() {
-	return owningThread == getThreadID();
-}
-
 void ReadWriteMutex::readLock() {
-	auto id = getThreadID();
-	unsigned& threadLockCount = get_rw_thread_lockCount(this);
-
-	if(owningThread != id && threadLockCount == 0) {
-		owningThread.wait_compare_exchange(id, invalidThreadID, spinCount);
-		++readCount;
-		owningThread = invalidThreadID;
+	HeldRWLock* held = findHeldRWLock(this);
+	if(held) {
+		//Read locks nest inside read locks and the write lock alike
+		++held->count;
 	}
 	else {
-		++readCount;
+#ifdef _MSC_VER
+		impl.lock_shared();
+#else
+		pthread_rwlock_rdlock(&impl);
+#endif
+		addHeldRWLock(this, false);
 	}
-
-	++threadLockCount;
 
 #ifdef PROFILE_LOCKS
 	++profileReadCount;
@@ -172,66 +168,105 @@ void ReadWriteMutex::readLock() {
 }
 
 void ReadWriteMutex::release() {
-	if(--readCount == 0 && owningThread == getThreadID())
+	HeldRWLock* held = findHeldRWLock(this);
+	assert(held);
+	if(--held->count != 0)
+		return;
+
+	bool write = held->write;
+	removeHeldRWLock(held);
+	if(write)
 		owningThread = invalidThreadID;
-	auto& threadLockCount = get_rw_thread_lockCount(this);
-	if(--threadLockCount == 0)
-		remove_rw_thread_lockCount(this);
+#ifdef _MSC_VER
+	if(write)
+		impl.unlock();
+	else
+		impl.unlock_shared();
+#else
+	pthread_rwlock_unlock(&impl);
+#endif
+}
+
+bool ReadWriteMutex::hasLock() {
+	return findHeldRWLock(this) != nullptr;
+}
+
+bool ReadWriteMutex::hasWriteLock() {
+	return owningThread == getThreadID();
 }
 
 Signal::Signal(int start) : flag(start) {
 }
 
 void Signal::signal(int value) {
-	flag.set_basic(value);
+	flag.store(value);
+	flag.notify_all();
 }
 
 void Signal::signalDown() {
-	--flag;
+	flag.fetch_sub(1);
+	flag.notify_all();
 }
 
 void Signal::signalUp() {
-	++flag;
+	flag.fetch_add(1);
+	flag.notify_all();
 }
 
 void Signal::signalDown(int value) {
-	flag -= value;
+	flag.fetch_sub(value);
+	flag.notify_all();
 }
 
 void Signal::signalUp(int value) {
-	flag += value;
+	flag.fetch_add(value);
+	flag.notify_all();
 }
 
 bool Signal::check(int checkFor) const {
-	return flag == checkFor;
+	return flag.load() == checkFor;
 }
 
-bool Signal::checkAndSignal(int waitFor, int newSignal) {
-	return flag.compare_exchange_strong(newSignal, waitFor) == waitFor;
+bool Signal::checkAndSignal(int checkFor, int newSignal) {
+	if(!flag.compare_exchange_strong(checkFor, newSignal))
+		return false;
+	flag.notify_all();
+	return true;
 }
 
 void Signal::wait(int waitFor) const {
-	unsigned spins = 0;
-	while(flag != waitFor) {
-		if(spins++ == spinCount) {
-			sleep(1);
-			spins = 0;
-		}
+	for(unsigned spins = 0; ; ++spins) {
+		int current = flag.load();
+		if(current == waitFor)
+			return;
+		if(spins < spinCount)
+			cpuRelax();
+		else
+			flag.wait(current);
 	}
 }
 
 void Signal::waitNot(int waitForNot) const {
-	unsigned spins = 0;
-	while(flag == waitForNot) {
-		if(spins++ == spinCount) {
-			sleep(1);
-			spins = 0;
-		}
+	for(unsigned spins = 0; flag.load() == waitForNot; ++spins) {
+		if(spins < spinCount)
+			cpuRelax();
+		else
+			flag.wait(waitForNot);
 	}
 }
 
 void Signal::waitAndSignal(int waitFor, int newSignal) {
-	flag.wait_compare_exchange(newSignal, waitFor, spinCount);
+	for(unsigned spins = 0; ; ++spins) {
+		int current = waitFor;
+		if(flag.compare_exchange_strong(current, newSignal)) {
+			flag.notify_all();
+			return;
+		}
+		if(spins < spinCount)
+			cpuRelax();
+		else
+			flag.wait(current);
+	}
 }
 
 #ifdef PROFILE_LOCKS

@@ -20,10 +20,20 @@
 #include <set>
 #endif
 #include <functional>
+#include <atomic>
+#include <mutex>
+#ifdef __APPLE__
+#include <os/lock.h>
+#endif
+#ifdef _MSC_VER
+#include <shared_mutex>
+#endif
 
 namespace threads {
 
 unsigned getNumberOfProcessors();
+//The number of cores that are not efficiency cores, or all of them where that is unknown
+unsigned getPerformanceCores();
 void async(std::function<int()> f);
 
 void sleep(unsigned int milliseconds);
@@ -38,48 +48,43 @@ typedef unsigned long threadreturn;
 typedef threadreturn threadcall threadfunc(void*);
 #endif
 
+//An integer with sequentially consistent atomic operations. On arm64 these cost the
+//same as acquire/release ones, and the engine's handshakes rely on the full ordering.
 class atomic_int {
-#ifdef _MSC_VER
-	volatile long value;
-#else
-	volatile int value;
-#endif
+	std::atomic<int> value;
 public:
-	int get_basic();
-	void set_basic(int val);
+	int get_basic() { return value.load(); }
+	void set_basic(int val) { value.store(val); }
 
-	int operator++();
-	int operator++(int);
-	int operator--();
-	int operator--(int);
-	
-	int operator+=(int value);
-	int operator-=(int value);
+	//Return the new value
+	int operator++() { return value.fetch_add(1) + 1; }
+	int operator--() { return value.fetch_sub(1) - 1; }
+	int operator|=(int v) { return value.fetch_or(v) | v; }
+	int operator&=(int v) { return value.fetch_and(v) & v; }
 
-	int operator|=(int value);
-	int operator&=(int value);
+	//Return the previous value
+	int operator++(int) { return value.fetch_add(1); }
+	int operator--(int) { return value.fetch_sub(1); }
+	int operator+=(int v) { return value.fetch_add(v); }
+	int operator-=(int v) { return value.fetch_sub(v); }
+	int exchange(int v) { return value.exchange(v); }
 
-	void operator=(int value);
+	void operator=(int v) { value.store(v); }
+	atomic_int& operator=(const atomic_int& other) { value.store(other.get()); return *this; }
 
-	int exchange(int value);
-	int compare_exchange_strong(int value, int compareTo);
+	//Sets the value to xchg if it is compareTo, and returns the value it had
+	int compare_exchange_strong(int xchg, int compareTo) {
+		value.compare_exchange_strong(compareTo, xchg);
+		return compareTo;
+	}
 
-	//Like compare_exchange_strong, but will not return until the value is exchanged
-	void wait_compare_exchange(int xchg, int compareTo, const int spinCount);
-
-	//Loads use acquire ordering so that data published before a store or
-	//exchange on this value is visible to the reader. x86 orders plain loads
-	//and stores this way already, arm64 does not.
-#ifdef _MSC_VER
-	int get() const { return value; }
-	operator int() const { return value; }
-#else
-	int get() const { return __atomic_load_n(&value, __ATOMIC_ACQUIRE); }
-	operator int() const { return __atomic_load_n(&value, __ATOMIC_ACQUIRE); }
-#endif
+	int get() const { return value.load(); }
+	operator int() const { return value.load(); }
 
 	atomic_int() : value(0) {}
 	atomic_int(int v) : value(v) {}
+	//Copies the other's value as it is now; the copy is not otherwise synchronized
+	atomic_int(const atomic_int& other) : value(other.get()) {}
 };
 
 //Swap a value atomically
@@ -127,14 +132,22 @@ enum ThreadPriority {
 };
 
 extern const int invalidThreadID;
-void createThread(threadfunc func, void* arg);
+//The name shows in debuggers, Instruments and crash logs
+void createThread(threadfunc func, void* arg, const char* name = nullptr);
 int getThreadID();
 void setThreadPriority(ThreadPriority priority);
 
+//A recursive mutex. Waiting threads spin briefly, then sleep in the kernel, which on
+//macOS also raises the owner's priority while they wait.
 struct Mutex {
 private:
 	atomic_int owningThread;
-	unsigned lockCount;
+	unsigned lockCount = 0;
+#ifdef __APPLE__
+	os_unfair_lock impl = OS_UNFAIR_LOCK_INIT;
+#else
+	std::mutex impl;
+#endif
 	static const unsigned spinCount;
 public:
 #ifdef PROFILE_LOCKS
@@ -144,7 +157,11 @@ public:
 	Mutex();
 	Mutex(const char* name);
 	~Mutex();
+#else
+	Mutex() = default;
 #endif
+	Mutex(const Mutex&) = delete;
+	Mutex& operator=(const Mutex&) = delete;
 
 	void lock();
 	bool try_lock();
@@ -162,11 +179,17 @@ public:
 	~Lock() { mutex->release(); }
 };
 
+//A read-write mutex. Both read and write locks are recursive, and the writer may also
+//take read locks, but a reader may not upgrade to a write lock. Each thread can hold
+//up to 16 different read-write mutexes at once.
 struct ReadWriteMutex {
 private:
 	atomic_int owningThread;
-	atomic_int readCount;
-	static const unsigned spinCount;
+#ifdef _MSC_VER
+	std::shared_mutex impl;
+#else
+	pthread_rwlock_t impl = PTHREAD_RWLOCK_INITIALIZER;
+#endif
 public:
 #ifdef PROFILE_LOCKS
 	atomic_int profileReadCount;
@@ -175,7 +198,11 @@ public:
 	bool observed;
 	ReadWriteMutex();
 	~ReadWriteMutex();
+#else
+	ReadWriteMutex() = default;
 #endif
+	ReadWriteMutex(const ReadWriteMutex&) = delete;
+	ReadWriteMutex& operator=(const ReadWriteMutex&) = delete;
 
 	void writeLock();
 	void readLock();
@@ -201,9 +228,11 @@ public:
 	~WriteLock() { mutex->release(); }
 };
 
+//An integer other threads can wait on. Waiting threads spin briefly, then sleep until
+//the value changes.
 struct Signal {
 private:
-	atomic_int flag;
+	std::atomic<int> flag;
 	static const unsigned spinCount;
 public:
 	Signal(int start = 0);

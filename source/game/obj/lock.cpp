@@ -223,11 +223,11 @@ bool updateLockGlobals(double time) {
 			if(printNextLockStats) {
 				print("LockGroup %d: %d objects", i, grp->objects.size());
 				print("  Bad Locks: %d / %d (%.0g%)",
-					grp->badLocks, (grp->goodLocks + grp->badLocks),
+					grp->badLocks.get(), (grp->goodLocks + grp->badLocks),
 					(double)grp->badLocks / (double)(grp->goodLocks
 						+ grp->badLocks) * 100.0);
 				print("  Gained %d objects, Lost %d objects.",
-					grp->gainedObjects, grp->lostObjects);
+					grp->gainedObjects.get(), grp->lostObjects.get());
 			}
 
 			grp->gainedObjects = 0;
@@ -237,7 +237,7 @@ bool updateLockGlobals(double time) {
 		}
 
 		if(printNextLockStats) {
-			print("Total Switches: %d\n", switches);
+			print("Total Switches: %d\n", switches.get());
 			printNextLockStats = false;
 		}
 		switches = 0;

@@ -1,6 +1,11 @@
 #include "threads.h"
 #include <pthread.h>
 #include <unistd.h>
+#include <string>
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#include <pthread/qos.h>
+#endif
 
 namespace threads {
 
@@ -16,11 +21,19 @@ int getThreadID() {
 struct threadInfo {
 	threadfunc func;
 	void* arg;
+	std::string name;
 };
 
 void* startThread(void* arg) {
 	threadInfo* info = (threadInfo*)arg;
 	threadID = nextThreadID++;
+	if(!info->name.empty()) {
+#ifdef __APPLE__
+		pthread_setname_np(info->name.c_str());
+#else
+		pthread_setname_np(pthread_self(), info->name.substr(0, 15).c_str());
+#endif
+	}
 
 	info->func(info->arg);
 
@@ -29,13 +42,28 @@ void* startThread(void* arg) {
 }
 
 void setThreadPriority(ThreadPriority priority) {
-	//NOT IMPLEMENTED
+#ifdef __APPLE__
+	//Quality of service decides both scheduling priority and whether a thread
+	//may run on the performance cores
+	qos_class_t qos;
+	switch(priority) {
+	case TP_High:
+		qos = QOS_CLASS_USER_INTERACTIVE; break;
+	case TP_Normal: default:
+		qos = QOS_CLASS_USER_INITIATED; break;
+	case TP_Low:
+		qos = QOS_CLASS_UTILITY; break;
+	}
+	pthread_set_qos_class_self_np(qos, 0);
+#endif
 }
 
-void createThread(threadfunc func, void* arg) {
+void createThread(threadfunc func, void* arg, const char* name) {
 	threadInfo* info = new threadInfo();
 	info->func = func;
 	info->arg = arg;
+	if(name)
+		info->name = name;
 
 	//Nothing joins the game's threads, so they release their resources on exit.
 	//The handle goes to a local: the thread may already have freed info by the time
@@ -61,6 +89,17 @@ unsigned getNumberOfProcessors() {
 	return sysconf(_SC_NPROCESSORS_ONLN);
 }
 
+unsigned getPerformanceCores() {
+#ifdef __APPLE__
+	//Performance level 0 is the fastest core type on Apple silicon
+	int cores = 0;
+	size_t size = sizeof(cores);
+	if(sysctlbyname("hw.perflevel0.logicalcpu", &cores, &size, nullptr, 0) == 0 && cores > 0)
+		return (unsigned)cores;
+#endif
+	return getNumberOfProcessors();
+}
+
 void sleep(unsigned int milliseconds) {
 	struct timespec wait;
 	wait.tv_sec = (milliseconds / 1000);
@@ -75,62 +114,6 @@ void idle() {
 #else
 	sleep(0);
 #endif
-}
-
-int atomic_int::operator++() {
-	return __sync_add_and_fetch(&value, 1);
-}
-
-int atomic_int::operator++(int) {
-	return __sync_fetch_and_add(&value, 1);
-}
-
-int atomic_int::operator--() {
-	return __sync_add_and_fetch(&value, -1);
-}
-
-int atomic_int::operator--(int) {
-	return __sync_fetch_and_add(&value, -1);
-}
-	
-int atomic_int::operator+=(int _add) {
-	return __sync_fetch_and_add(&value, _add);
-}
-
-int atomic_int::operator-=(int _sub) {
-	return __sync_fetch_and_sub(&value, _sub);
-}
-
-void atomic_int::operator=(int _value) {
-	//Mutex::release and Signal::signal publish through this store. It needs
-	//release ordering, otherwise arm64 may make the store visible before the
-	//writes made inside the critical section.
-	__atomic_store_n(&value, _value, __ATOMIC_SEQ_CST);
-}
-
-int atomic_int::operator&=(int _value) {
-	return __sync_and_and_fetch(&value, _value);
-}
-
-int atomic_int::operator|=(int _value) {
-	return __sync_or_and_fetch(&value, _value);
-}
-
-int atomic_int::exchange(int _xchg) {
-	//__sync_lock_test_and_set is only an acquire barrier
-	return __atomic_exchange_n(&value, _xchg, __ATOMIC_SEQ_CST);
-}
-
-int atomic_int::compare_exchange_strong(int _xchg, int compareTo) {
-	return __sync_val_compare_and_swap(&value, compareTo, _xchg);
-}
-
-int atomic_int::get_basic() {
-	return __atomic_load_n(&value, __ATOMIC_ACQUIRE);
-}
-
-void atomic_int::set_basic(int val) {
-	__atomic_store_n(&value, val, __ATOMIC_SEQ_CST);
 }
 
 _threadlocalPointer::_threadlocalPointer() {

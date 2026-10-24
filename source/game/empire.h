@@ -101,7 +101,8 @@ public:
 
 	//Stats
 	std::vector<StatHistory*> statHistories;
-	std::vector<threads::ReadWriteMutex> statLocks;
+	//A deque, since mutexes cannot move when it grows
+	std::deque<threads::ReadWriteMutex> statLocks;
 	void recordStat(unsigned id, int value);
 	void recordStatDelta(unsigned id, int delta);
 	void recordStat(unsigned id, float value);

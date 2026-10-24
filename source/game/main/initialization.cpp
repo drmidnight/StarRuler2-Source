@@ -1306,13 +1306,11 @@ void initMods(const std::vector<std::string>& mods) {
 
 	startPreload();
 	Loading::finalize();
-	
+
+	//The preload has started building the client and server engines on other threads,
+	//so only the menu engine is safe to collect here
 	if(devices.scripts.menu)
 		devices.scripts.menu->garbageCollect(true);
-	if(devices.scripts.client)
-		devices.scripts.client->garbageCollect(true);
-	if(devices.scripts.server)
-		devices.scripts.server->garbageCollect(true);
 }
 
 void destroyMod() {

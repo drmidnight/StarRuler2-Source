@@ -245,8 +245,10 @@ Image* loadPNG(const char* filename) {
 	if(fread(buffer,1,readSigBytes,imgfile) != readSigBytes || png_sig_cmp(buffer, 0, readSigBytes) != 0)
 		return 0;
 	
-	//Prep png structures
-	png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, 0, 0, 0);
+	//Prep png structures. Several of the game's images carry slightly malformed colour
+	//profiles, which libpng warns about on every load, so warnings are ignored.
+	png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, 0, 0,
+		[](png_structp, png_const_charp) {});
 	if(png == 0)
 		return 0;
 

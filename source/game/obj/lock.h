@@ -64,7 +64,8 @@ void printLockStats();
 
 void acquireRandomChildren();
 bool tickRandomLock(double time, int limit = 1000);
-void tickRandomMessages(int limit = 100);
+//Returns whether it processed any messages
+bool tickRandomMessages(int limit = 100);
 //Attempts to process the messages in a particular group, with no guarantee of any success
 void tickLockMessages(LockGroup* lock, int limit = 8);
 

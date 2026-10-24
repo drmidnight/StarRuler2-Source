@@ -307,9 +307,9 @@ bool updateLockGlobals(double time) {
 	return true;
 }
 
-void tickRandomMessages(int limit) {
+bool tickRandomMessages(int limit) {
 	if(lockGroups.empty())
-		return;
+		return false;
 	if(activeLockGroup)
 		throw "Can't lock multiple lock groups.";
 
@@ -320,17 +320,20 @@ void tickRandomMessages(int limit) {
 		LockGroup* lock = lockGroups[(i+off) % count];
 
 		if(lock->hasMessages() && !lock->hasLock()) {
+			bool processed = false;
 			devices.scripts.server->threadedCallMutex.readLock();
 			if(lock->mutex.try_lock()) {
 				activeLockGroup = lock;
 				lock->processMessages(limit);
 				activeLockGroup = 0;
 				lock->mutex.release();
+				processed = true;
 			}
 			devices.scripts.server->threadedCallMutex.release();
-			break;
+			return processed;
 		}
 	}
+	return false;
 }
 
 void acquireRandomChildren() {

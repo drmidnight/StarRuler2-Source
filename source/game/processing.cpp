@@ -357,10 +357,13 @@ threads::threadreturn threadcall process(void* data) {
 
 		double time = devices.driver->getGameTime();
 
-		tickRandomMessages();
-		tickRandomLock(time, activeObjectTickCount);
+		bool didWork = tickRandomMessages();
+		if(tickRandomLock(time, activeObjectTickCount))
+			didWork = true;
 
-		threads::idle();
+		//Only wait when there was nothing to do, so busy workers keep ticking
+		if(!didWork)
+			threads::idle();
 
 #ifdef PROFILE_PROCESSING
 		profileProcessing();

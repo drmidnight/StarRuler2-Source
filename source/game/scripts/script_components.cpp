@@ -1059,9 +1059,10 @@ public:
 		if(!script || (fromGUI && method->restricted && !devices.network->getCurrentPlayer().controls(emp))) {
 			if(script) //Attempted to call restricted method
 				info( format("Cannot call method '$1' on other empires.", method->wrapped.name).c_str() );
-			if(retValue)
+			if(retValue) {
 				std::atomic_thread_fence(std::memory_order_release); //arm64: publish the value before the flag
 				retValue->asyncReturned = true;
+			}
 			return;
 		}
 

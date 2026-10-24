@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <set>
 #include <list>
+#include <atomic>
 #include "main/references.h"
 #include "main/logging.h"
 
@@ -12,12 +13,14 @@ struct Task;
 std::function<void(void)> threadSetup, threadCleanup;
 
 threads::atomic_int workers(0);
-bool finalized = false;
+std::atomic<bool> finalized = false;
 double startTime;
 
+//Guards tasks, nextTask and namedTasks
 threads::Mutex taskLock;
 threads::Signal processingTasks;
-bool tasksFinished;
+//Set once the last worker has freed the phase's tasks
+std::atomic<bool> tasksFinished = false;
 std::unordered_map<std::string, Task*> namedTasks;
 std::list<Task*> tasks;
 auto nextTask = tasks.end();
@@ -27,7 +30,8 @@ struct Task {
 
 	std::vector<Task*> dependencies;
 
-	bool finished;
+	//Dependent tasks on other threads read what this task produced once they see it set
+	std::atomic<bool> finished;
 	double executionTime;
 
 	int threadRestriction;
@@ -83,25 +87,29 @@ struct Task {
 		_execute();
 		double end = devices.driver->getAccurateTime();
 		executionTime = end - start;
-		finished = true;
+		finished.store(true, std::memory_order_release);
 
 		info("%s took %.1fms on thread %i", name.c_str(), executionTime * 1000.0, threads::getThreadID());
 	}
 
 	bool isFinished() {
-		return finished;
+		return finished.load(std::memory_order_acquire);
 	}
 };
 
 void addTask(const std::string& name, const char* depends, std::function<void(void)> execute, int threadRestriction) {
+	threads::Lock lock(taskLock);
 	Task* task = new Task(name, depends);
 
 	task->_execute = execute;
 	task->threadRestriction = threadRestriction;
 
-	taskLock.lock();
 	tasks.push_back(task);
-	taskLock.release();
+}
+
+static bool hasPendingTasks() {
+	threads::Lock lock(taskLock);
+	return !tasks.empty();
 }
 
 bool finished() {
@@ -109,10 +117,12 @@ bool finished() {
 }
 
 threads::threadreturn threadcall processLoad(void* arg) {
-	if(threadSetup)
-		threadSetup();
+	//The next loading phase can replace these while this worker is still finishing
+	auto setup = threadSetup, cleanup = threadCleanup;
+	if(setup)
+		setup();
 
-	while(!finalized || !tasks.empty()) {
+	while(!finalized || hasPendingTasks()) {
 		process();
 		threads::sleep(1);
 	}
@@ -124,12 +134,15 @@ threads::threadreturn threadcall processLoad(void* arg) {
 	if(workers == 0) {
 		processingTasks.wait(0);
 		double totalTime = 0;
-		auto iTask = namedTasks.begin();
-		while(iTask != namedTasks.end()) {
-			totalTime += iTask->second->executionTime;
+		{
+			threads::Lock lock(taskLock);
+			auto iTask = namedTasks.begin();
+			while(iTask != namedTasks.end()) {
+				totalTime += iTask->second->executionTime;
 
-			delete iTask->second;
-			iTask = namedTasks.erase(iTask);
+				delete iTask->second;
+				iTask = namedTasks.erase(iTask);
+			}
 		}
 
 		double time = devices.driver->getAccurateTime(), loadTime = time - startTime;
@@ -138,8 +151,8 @@ threads::threadreturn threadcall processLoad(void* arg) {
 		tasksFinished = true;
 	}
 
-	if(threadCleanup)
-		threadCleanup();
+	if(cleanup)
+		cleanup();
 	return 0;
 }
 
@@ -162,7 +175,8 @@ void finalize() {
 }
 
 void finish() {
-	while(workers != 0)
+	//The last worker frees the tasks after it stops counting as a worker
+	while(workers != 0 || !tasksFinished)
 		threads::sleep(0);
 	finalized = false;
 
@@ -171,7 +185,7 @@ void finish() {
 
 void process() {
 	processingTasks.signalUp();
-	if(tasks.empty()) {
+	if(!hasPendingTasks()) {
 		processingTasks.signalDown();
 		return;
 	}

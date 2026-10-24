@@ -589,7 +589,7 @@ static bool isQuerying() {
 }
 
 static void getQueriedServers(CScriptArray* arr) {
-	threads::Mutex mtx(devices.network->queryMtx);
+	threads::Lock lock(devices.network->queryMtx);
 	std::vector<net::Game>& list = devices.network->queryResult;
 	foreach(it, list)
 		arr->InsertLast(&(*it));

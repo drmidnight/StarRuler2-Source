@@ -90,11 +90,11 @@ void start(unsigned threads) {
 	msgHandlersActive.signal(threads);
 	for(unsigned i = 0; i < threads; ++i) {
 #ifdef PROFILE_PROCESSING
-		threads::createThread(process, new ProcessingData());
+		threads::createThread(process, new ProcessingData(), "sr2-simulation");
 #else
-		threads::createThread(process, nullptr);
+		threads::createThread(process, nullptr, "sr2-simulation");
 #endif
-		threads::createThread(messageProcess, nullptr);
+		threads::createThread(messageProcess, nullptr, "sr2-messages");
 	}
 }
 
@@ -257,6 +257,7 @@ void run(bool onlyActions) {
 
 threads::threadreturn threadcall messageProcess(void* data) {
 	enterSection(NS_MessageThread);
+	threads::setThreadPriority(threads::TP_High);
 	initNewThread();
 
 	while(!stopProcessing) {
@@ -284,12 +285,13 @@ threads::threadreturn threadcall messageProcess(void* data) {
 
 void startEmpireThread(Empire* emp) {
 	msgHandlersActive.signalUp();
-	threads::createThread(empireMessageProcess, emp);
+	threads::createThread(empireMessageProcess, emp, "sr2-empire-messages");
 }
 
 threads::atomic_int nextEmpTickIndex;
 threads::threadreturn threadcall empireMessageProcess(void* data) {
 	enterSection(NS_MessageThread);
+	threads::setThreadPriority(threads::TP_High);
 	Empire* emp = (Empire*)data;
 	initNewThread();
 
@@ -322,6 +324,7 @@ threads::threadreturn threadcall empireMessageProcess(void* data) {
 
 threads::threadreturn threadcall process(void* data) {
 	enterSection(NS_Processing);
+	threads::setThreadPriority(threads::TP_High);
 #ifdef PROFILE_PROCESSING
 	threadProc = (ProcessingData*)data;
 #endif

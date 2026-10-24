@@ -164,7 +164,7 @@ void prepare(unsigned threads, std::function<void(void)> threadPrep, std::functi
 	startTime = devices.driver->getAccurateTime();
 	workers = threads;
 	for(unsigned i = 0; i < threads; ++i)
-		threads::createThread(processLoad,0);
+		threads::createThread(processLoad, 0, "sr2-loader");
 }
 
 void finalize() {

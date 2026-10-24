@@ -207,6 +207,7 @@ double animateSomeNodes(int maxNodes) {
 std::atomic<bool> EndAnimationThreads = false;
 threads::threadreturn threadcall animateNodes(void* arg) {
 	enterSection(NS_Animation);
+	threads::setThreadPriority(threads::TP_High);
 	double& logTime = *(double*)arg;
 	initNewThread();
 	activeAnimCount.signalUp();
@@ -586,7 +587,7 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 		animationThreadCount = std::max(1u,devices.driver->getProcessorCount()-1);
 		animTimes = new double[animationThreadCount]();
 		for(unsigned i = 0; i < animationThreadCount; ++i)
-			threads::createThread(animateNodes, &animTimes[i]);
+			threads::createThread(animateNodes, &animTimes[i], "sr2-animation");
 #ifdef PROFILE_ANIMATION
 		console.addCommand("anim_times", [](argList& args) {
 			dumpAnimTimes = true;

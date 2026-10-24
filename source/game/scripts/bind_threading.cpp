@@ -419,7 +419,7 @@ struct ScriptThread {
 				++systemRefs;
 
 				wasError = false;
-				threads::createThread(runScriptThread, this);
+				threads::createThread(runScriptThread, this, "sr2-script");
 				return true;
 			}
 		}
@@ -502,6 +502,7 @@ struct ScriptThread {
 
 threads::threadreturn threadcall runScriptThread(void* arg) {
 	ScriptThread& thread = *(ScriptThread*)arg;
+	threads::setThreadPriority(threads::TP_High);
 	initNewThread();
 
 	//Server uses game time, client and menu use frame time

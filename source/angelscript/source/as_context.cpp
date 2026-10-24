@@ -3708,17 +3708,8 @@ static const void *const dispatch_table[256] = {
 	INSTRUCTION(asBC_DIVf):
 		{
 			float divider = *(float*)(l_fp - asBC_SWORDARG2(l_bc));
-			if( divider == 0 )
-			{
-				// Need to move the values back to the context
-				m_regs.programPointer    = l_bc;
-				m_regs.stackPointer      = l_sp;
-				m_regs.stackFramePointer = l_fp;
-
-				// Raise exception
-				SetInternalException(TXT_DIVIDE_BY_ZERO);
-				return;
-			}
+			// SR2: floating point division by zero gives inf or nan as in IEEE 754, which is what
+			// the game's x86 JIT always did and what its scripts were written against
 			*(float*)(l_fp - asBC_SWORDARG0(l_bc)) = *(float*)(l_fp - asBC_SWORDARG1(l_bc)) / divider;
 		}
 		l_bc += 2;
@@ -3727,17 +3718,8 @@ static const void *const dispatch_table[256] = {
 	INSTRUCTION(asBC_MODf):
 		{
 			float divider = *(float*)(l_fp - asBC_SWORDARG2(l_bc));
-			if( divider == 0 )
-			{
-				// Need to move the values back to the context
-				m_regs.programPointer    = l_bc;
-				m_regs.stackPointer      = l_sp;
-				m_regs.stackFramePointer = l_fp;
-
-				// Raise exception
-				SetInternalException(TXT_DIVIDE_BY_ZERO);
-				return;
-			}
+			// SR2: floating point division by zero gives inf or nan as in IEEE 754, which is what
+			// the game's x86 JIT always did and what its scripts were written against
 			*(float*)(l_fp - asBC_SWORDARG0(l_bc)) = fmodf(*(float*)(l_fp - asBC_SWORDARG1(l_bc)), divider);
 		}
 		l_bc += 2;
@@ -3761,17 +3743,8 @@ static const void *const dispatch_table[256] = {
 	INSTRUCTION(asBC_DIVd):
 		{
 			double divider = *(double*)(l_fp - asBC_SWORDARG2(l_bc));
-			if( divider == 0 )
-			{
-				// Need to move the values back to the context
-				m_regs.programPointer    = l_bc;
-				m_regs.stackPointer      = l_sp;
-				m_regs.stackFramePointer = l_fp;
-
-				// Raise exception
-				SetInternalException(TXT_DIVIDE_BY_ZERO);
-				return;
-			}
+			// SR2: floating point division by zero gives inf or nan as in IEEE 754, which is what
+			// the game's x86 JIT always did and what its scripts were written against
 
 			*(double*)(l_fp - asBC_SWORDARG0(l_bc)) = *(double*)(l_fp - asBC_SWORDARG1(l_bc)) / divider;
 			l_bc += 2;
@@ -3781,17 +3754,8 @@ static const void *const dispatch_table[256] = {
 	INSTRUCTION(asBC_MODd):
 		{
 			double divider = *(double*)(l_fp - asBC_SWORDARG2(l_bc));
-			if( divider == 0 )
-			{
-				// Need to move the values back to the context
-				m_regs.programPointer    = l_bc;
-				m_regs.stackPointer      = l_sp;
-				m_regs.stackFramePointer = l_fp;
-
-				// Raise exception
-				SetInternalException(TXT_DIVIDE_BY_ZERO);
-				return;
-			}
+			// SR2: floating point division by zero gives inf or nan as in IEEE 754, which is what
+			// the game's x86 JIT always did and what its scripts were written against
 
 			*(double*)(l_fp - asBC_SWORDARG0(l_bc)) = fmod(*(double*)(l_fp - asBC_SWORDARG1(l_bc)), divider);
 			l_bc += 2;

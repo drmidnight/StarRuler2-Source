@@ -75,6 +75,11 @@ Threaded(asIScriptContext*) clientContext = 0;
 
 threads::Mutex sectionLock;
 std::string lastSection;
+std::atomic<unsigned> scriptErrorCount;
+
+unsigned getScriptErrorCount() {
+	return scriptErrorCount;
+}
 
 #ifndef DISABLE_SCRIPT_CACHE
 static bool loadCached(Module& mod, const File& fl, const std::string& cache_file, unsigned cache_version);
@@ -95,8 +100,10 @@ void printErrors(asSMessageInfo* msg, void* ptr) {
 	}
 	else {
 		const char* type;
-		if(msg->type == asMSGTYPE_ERROR)
+		if(msg->type == asMSGTYPE_ERROR) {
 			type = "Error";
+			++scriptErrorCount;
+		}
 		else// if(msg->type == asMSGTYPE_WARNING)
 			type = "Warning";
 		

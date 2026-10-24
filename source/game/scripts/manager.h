@@ -18,6 +18,9 @@ class asCGlobalProperty;
 
 namespace scripts {
 
+//Errors AngelScript has reported while registering binds or compiling, in any engine
+unsigned getScriptErrorCount();
+
 enum EngineDataIDs {
 	EDID_Manager,
 	EDID_SerializableType,

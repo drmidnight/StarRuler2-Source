@@ -17,6 +17,7 @@
 #include "obj/lock.h"
 #include "files.h"
 #include "processing.h"
+#include "scripts/manager.h"
 #include "threads.h"
 #include "network/network_manager.h"
 #include "util/locked_type.h"
@@ -625,6 +626,7 @@ int main(int argc, char** argv) {
 	std::string localeName = "";
 	bool loadGraphics = true;
 	bool createWindow = true;
+	bool testScripts = false;
 
 	bool handleCrashes = true;
 
@@ -690,6 +692,7 @@ int main(int argc, char** argv) {
 			reload_gui = true;
 		}
 		else if(arg == "test-scripts") {
+			testScripts = true;
 			game_state = GS_Test_Scripts;
 			loadGraphics = false;
 		}
@@ -897,6 +900,11 @@ int main(int argc, char** argv) {
 
 	destroyMod();
 	destroyGlobal();
+
+	if(testScripts && scripts::getScriptErrorCount() != 0) {
+		print("%u script errors", scripts::getScriptErrorCount());
+		return 1;
+	}
 
 	if(launchPatcher) {
 #ifdef _MSC_VER

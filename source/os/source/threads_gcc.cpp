@@ -14,7 +14,6 @@ int getThreadID() {
 }
 
 struct threadInfo {
-	pthread_t thread;
 	threadfunc func;
 	void* arg;
 };
@@ -38,18 +37,21 @@ void createThread(threadfunc func, void* arg) {
 	info->func = func;
 	info->arg = arg;
 
+	//Nothing joins the game's threads, so they release their resources on exit.
+	//The handle goes to a local: the thread may already have freed info by the time
+	//pthread_create returns.
+	pthread_t thread;
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 #ifdef __APPLE__
 	//macOS gives secondary threads a 512KB stack by default, against 8MB on Linux.
 	//The script threads nest script and native calls deeply, and on arm64 they run
 	//interpreted rather than through the x86 JIT, so match the Linux default.
-	pthread_attr_t attr;
-	pthread_attr_init(&attr);
 	pthread_attr_setstacksize(&attr, 8 * 1024 * 1024);
-	pthread_create(&info->thread, &attr, &startThread, info);
-	pthread_attr_destroy(&attr);
-#else
-	pthread_create(&info->thread, 0, &startThread, info);
 #endif
+	pthread_create(&thread, &attr, &startThread, info);
+	pthread_attr_destroy(&attr);
 }
 
 pthread_mutex_t sleepMutex = PTHREAD_MUTEX_INITIALIZER;

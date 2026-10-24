@@ -143,6 +143,8 @@ public:
 	DriverCallbacks onWindowClose;
 	DriverCallbacks_1<unsigned> onCharTyped;
 	DriverCallbacks_2<double,double> onScroll;
+	//Trackpad pinch: change in scale, positive when spreading fingers apart
+	DriverCallbacks_1<double> onMagnify;
 	DriverCallbacks_2<int,int> onResize, onMouseButton, onMouseMoved, onKeyEvent;
 
 	bool shiftKey, altKey, ctrlKey;

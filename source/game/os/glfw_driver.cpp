@@ -42,6 +42,9 @@ void redirectMouseWheel(GLFWwindow*,double x, double y);
 #ifdef __APPLE__
 //Set by the patched GLFW Cocoa backend for each scroll event
 extern "C" int sr2PreciseScroll;
+//Called by the patched GLFW Cocoa backend for each trackpad pinch step
+extern "C" void (*sr2MagnifyCallback)(double magnification);
+void redirectMagnify(double magnification);
 #endif
 void trackMouseOver(GLFWwindow*,int over);
 void glfwError(int, const char*);
@@ -258,6 +261,9 @@ public:
 		glfwSetCharCallback(window, redirectCharKey);
 		glfwSetMouseButtonCallback(window, redirectMouseButton);
 		glfwSetScrollCallback(window, redirectMouseWheel);
+#ifdef __APPLE__
+		sr2MagnifyCallback = redirectMagnify;
+#endif
 		glfwSetCursorPosCallback(window, redirectMouseMove);
 		glfwSetCursorEnterCallback(window, trackMouseOver);
 
@@ -576,6 +582,12 @@ void redirectMouseMove(GLFWwindow*, double x, double y) {
 	driver->mouse_x = (int)x;
 	driver->mouse_y = (int)y;
 }
+
+#ifdef __APPLE__
+void redirectMagnify(double magnification) {
+	driver->onMagnify(magnification);
+}
+#endif
 
 void redirectMouseWheel(GLFWwindow*, double x, double y) {
 #ifdef __APPLE__

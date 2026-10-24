@@ -666,6 +666,15 @@ int _glfwPlatformGetKeyForChar(int chr) {
 //with precise deltas, which the game reads to scale zooming
 int sr2PreciseScroll = 0;
 
+//Star Ruler 2: receives each trackpad pinch step's change in scale
+void (*sr2MagnifyCallback)(double magnification) = NULL;
+
+- (void)magnifyWithEvent:(NSEvent *)event
+{
+    if (sr2MagnifyCallback)
+        sr2MagnifyCallback([event magnification]);
+}
+
 - (void)scrollWheel:(NSEvent *)event
 {
     double deltaX, deltaY;

@@ -17,6 +17,10 @@ double OBJLOCK_ZOOMDIST = 5.0;
 //notches a mouse wheel sends for the same intent, so each unit zooms less
 const double PRECISE_ZOOM_SCALE = 0.35;
 
+//The zoom range spans whole galaxies, so a pinch zooms more than the change in
+//finger spread: a pinch that doubles the spread zooms in by 2^PINCH_ZOOM_SCALE
+const double PINCH_ZOOM_SCALE = 3.0;
+
 class SmartCamera : Savable {
 	//Main engine camera
 	Camera camera;
@@ -97,6 +101,17 @@ class SmartCamera : Savable {
 			factor = pow(tickZoom, delta * settings::dZoomSpeed);
 		else
 			factor = pow(tickZoom, -delta * settings::dZoomSpeed);
+		zoomBy(factor);
+	}
+
+	//Zoom for a trackpad pinch step, spreading fingers apart zooms in.
+	//Like any direct manipulation, it ignores the inverted zoom setting.
+	void pinch(double amount) {
+		zoomBy(pow(max(1.0 + amount, 0.01), -PINCH_ZOOM_SCALE * settings::dZoomSpeed));
+	}
+
+	//Multiply the camera distance by a factor, towards or away from the cursor if enabled
+	void zoomBy(double factor) {
 		CAM_ZOOMED = true;
 
 		if(lockedObject !is null) {

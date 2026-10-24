@@ -21,6 +21,7 @@ enum InputCall {
 	IC_KeyEvent,
 	IC_DoubleClick,
 	IC_Overlay,
+	IC_Magnify,
 
 	IC_COUNT
 };
@@ -36,6 +37,7 @@ const char* InputCallDecls[IC_COUNT] = {
 	"bool onKeyEvent(int, int)",
 	"void onMouseDoubleClicked(int)",
 	"void onOverlayChanged(bool)",
+	"void onMagnify(double)",
 };
 
 asIScriptFunction* inputCalls[GS_COUNT][IC_COUNT];
@@ -297,6 +299,15 @@ bool onMouseMoved(int x, int y) {
 	return true;
 }
 
+bool onMagnify(double amount) {
+	if(manager[game_state] && inputCalls[game_state][IC_Magnify]) {
+		auto call = manager[game_state]->call(inputCalls[game_state][IC_Magnify]);
+		call.push(amount);
+		call.call();
+	}
+	return true;
+}
+
 bool onMouseWheel(double x, double y) {
 	if(manager[game_state] && inputCalls[game_state][IC_MouseWheel]) {
 		auto call = manager[game_state]->call(inputCalls[game_state][IC_MouseWheel]);
@@ -313,6 +324,7 @@ void registerInput() {
 	devices.driver->onWindowClose.add(onWindowClose);
 	//devices.driver->onResize.add(onWindowClose);
 	devices.driver->onScroll.add(onMouseWheel);
+	devices.driver->onMagnify.add(onMagnify);
 	devices.driver->onMouseButton.add(onMouseButton);
 	devices.driver->onMouseMoved.add(onMouseMoved);
 	devices.driver->onCharTyped.add(onCharTyped);

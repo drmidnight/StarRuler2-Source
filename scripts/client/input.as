@@ -144,6 +144,14 @@ void onMouseWheel(double x, double y) {
 	activeCamera.zoom(y);
 }
 
+//Called for each step of a trackpad pinch gesture.
+// amount: Change in scale, positive when spreading fingers apart.
+void onMagnify(double amount) {
+	if(isGuiHovered() || ActiveCamera is null)
+		return;
+	activeCamera.pinch(amount);
+}
+
 //Called when the mouse is dragged with one or more buttons
 //pressed on the 3D view.
 // buttons: Bitmask of pressed buttons (0x1 << button_num)

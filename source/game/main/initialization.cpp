@@ -1427,7 +1427,7 @@ void initGame() {
 	if(!processing::isRunning()) {
 		unsigned cpuCount = devices.driver->getProcessorCount();
 		threadCount = std::max(cpuCount+1,1u);
-		processing::start(cpuCount);
+		processing::start(threadCount);
 	}
 	Empire::initEmpires();
 

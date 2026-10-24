@@ -1,7 +1,8 @@
 # Metal Backend and Threading Overhaul Plan
 
-Status: 2026-10-23. M0 is done (`m0-baseline`). M1 is done on `m1-correctness` except item 5, which moves to M3. Measurements are in
-[benchmark.md](benchmark.md).
+Status: 2026-10-23. M0 is merged to `master`. M1 is done on `m1-correctness`, except item 5, which
+moves to M3. M2 is done on `m2-primitives`, which builds on M1. Neither has been verified in a
+running game yet. Measurements are in [benchmark.md](benchmark.md).
 
 This plan moves the Apple Silicon fork from OpenGL 2.1 to a native Metal renderer and replaces the
 engine's spin-and-sleep threading with blocking, QoS-aware primitives. The fork is Apple-only
@@ -119,6 +120,18 @@ Add Makefile switches next to the existing `DEBUG`/`ADD_DBG`/`NLTO`:
 ---
 
 ## M2: Threading primitives (same API, new implementation)
+
+**Done, with these differences from the plan below:**
+- `atomic_int` uses sequentially consistent operations, not acquire/release. On arm64 they cost the
+  same, and the engine has Dekker-style handshakes that need the full ordering.
+- `ReadWriteMutex` uses `pthread_rwlock_t`. Darwin's rwlock takes read locks with a single atomic
+  operation, while libc++'s `std::shared_mutex` takes an internal mutex for every read lock.
+- `wait_compare_exchange` was unused and has been removed.
+- Making `Mutex` non-copyable found a bug: `getQueriedServers` copied the query mutex instead of
+  locking it.
+- `Empire::statLocks` is a `std::deque`, so growing it never moves a mutex.
+- Run the tests with `make -f source/linux/Makefile test_threads`, and add `SANITIZE=thread` for the
+  TSan build.
 
 The `threads::` API is used widely, so we keep it and swap the implementations. Approximate use
 counts:

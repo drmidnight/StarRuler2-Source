@@ -1,8 +1,8 @@
 # Metal Backend and Threading Overhaul Plan
 
-Status: 2026-10-23. M0 is merged to `master`. M1 is done on `m1-correctness`, except item 5, which
-moves to M3. M2 is done on `m2-primitives`, which builds on M1. Neither has been verified in a
-running game yet. Measurements are in [benchmark.md](benchmark.md).
+Status: 2026-10-27. M0, M1 and M2 are merged to `master`. M3 is partly done on `m3-scheduler`
+(M3.1, M3.2, M3.4 and M3.5 phase 1). The rest of M3 is deferred, and M4 is next. Measurements are in
+[benchmark.md](benchmark.md).
 
 This plan moves the Apple Silicon fork from OpenGL 2.1 to a native Metal renderer and replaces the
 engine's spin-and-sleep threading with blocking, QoS-aware primitives. The fork is Apple-only
@@ -254,6 +254,26 @@ measure it). No behaviour change in gameplay.
 ---
 
 ## M3: Event-driven scheduling
+
+**Partly done, with these differences from the plan below:**
+- The pool (`os/work_pool.h`) has priority lanes: frame, action, tick. One worker per performance
+  core.
+- Messages run on a second pool of cpu+1 threads. An async script call with a return value blocks
+  its job until another group handles the message, so messages sharing the main pool could deadlock
+  once every worker is waiting.
+- Lock groups tick once per frame instead of on a ready queue. Game time only advances in
+  `swapBuffers`, so ticking more often did no work. A cycle that overruns a frame starts the next one
+  right away.
+- `Action::run` returns `AR_Done`, `AR_Again` or `AR_NextFrame`, so projectiles stop re-queuing in a
+  busy loop.
+- Empire threads block on a wake counter instead of polling.
+- Benchmark save: 1.94 cores at normal speed (M2: 2.03), mostly rendering on the main thread. Paused,
+  the workers use about 2% each. At the fastest speed the pool saturates all cores, and the physics
+  rwlock is about 15% of the busy samples.
+
+**Still to do:** M3.3, M3.6, M3.7 (may fold into M4.3, which touches `swapBuffers`), M1 item 5 and the
+`PhysicsGrid::updateItem` rwlock contention, and the non-atomic `received` flag in
+`bind_object.cpp` (`GetObjNode`/`GetObjName`). The in-game save/quit/new-game pass has not been run.
 
 ### Current structure (for reference)
 - **`processing::start`** (`processing.cpp:85-92`) starts three pools:

@@ -72,6 +72,7 @@ CXXFLAGS += -I./source/os/include -I./source/os/source -I./source/util/include
 #Source code files
 SOURCES = \
 	threads.cpp \
+	work_pool.cpp \
 	threads_gcc.cpp \
 	files.cpp \
 	files_linux.cpp \

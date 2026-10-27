@@ -2,6 +2,7 @@
 //  make -f source/linux/Makefile test_threads
 //  make -f source/linux/Makefile test_threads SANITIZE=thread
 #include "threads.h"
+#include "work_pool.h"
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -247,6 +248,116 @@ static void testThreadInfo() {
 	CHECK(otherID != mainID);
 }
 
+static void testWorkPool() {
+	//Jobs run on the calling thread when there are no workers
+	{
+		threads::WorkPool pool;
+		std::vector<int> order;
+		for(int i = 0; i < 5; ++i)
+			pool.push(0, [&order, i] { order.push_back(i); });
+		pool.helpUntil([&] { return order.size() == 5; });
+		CHECK((order == std::vector<int>{ 0, 1, 2, 3, 4 }));
+	}
+
+	//Many jobs on many workers
+	{
+		threads::WorkPool pool;
+		pool.start(4, "test");
+		std::atomic<int> count(0);
+		for(int i = 0; i < 10000; ++i)
+			pool.push(i % 3, [&] { ++count; });
+		pool.helpUntil([&] { return count.load() == 10000; }, 0);
+		CHECK(count.load() == 10000);
+		pool.stop();
+	}
+
+	//Lower lanes run first, and each lane is first in first out
+	{
+		threads::WorkPool pool;
+		std::atomic<bool> go(false);
+		std::atomic<int> ran(0);
+		std::vector<int> order;
+		pool.start(1, "test");
+		pool.push(0, [&] { go.wait(false); });
+		pool.push(1, [&] { order.push_back(10); ++ran; });
+		pool.push(1, [&] { order.push_back(11); ++ran; });
+		pool.push(0, [&] { order.push_back(0); ++ran; });
+		go = true;
+		go.notify_all();
+		pool.helpUntil([&] { return ran.load() == 3; }, 0);
+		CHECK((order == std::vector<int>{ 0, 10, 11 }));
+		pool.stop();
+	}
+
+	//Held lanes don't run until released, and waitIdle waits for running jobs
+	{
+		threads::WorkPool pool;
+		pool.start(2, "test");
+		std::atomic<int> count(0);
+		pool.hold(1);
+		pool.push(1, [&] { ++count; });
+		sleepMs(20);
+		CHECK(count.load() == 0);
+		pool.release(1);
+		pool.helpUntil([&] { return count.load() == 1; }, 0);
+
+		std::atomic<bool> finished(false);
+		pool.push(2, [&] { sleepMs(30); finished = true; });
+		sleepMs(5);
+		pool.waitIdle(2);
+		CHECK(finished.load());
+
+		//A job waiting for its own lane doesn't wait for itself
+		std::atomic<bool> selfWaited(false);
+		pool.push(2, [&] { pool.waitIdle(2); selfWaited = true; });
+		pool.helpUntil([&] { return selfWaited.load(); }, 0);
+		pool.stop();
+	}
+
+	//Timed jobs wait for their delay, and wake sleeping workers
+	{
+		threads::WorkPool pool;
+		pool.start(2, "test");
+		std::atomic<bool> ran(false);
+		auto start = std::chrono::steady_clock::now();
+		pool.pushAfter(0, 0.05, [&] { ran = true; });
+		pool.helpUntil([&] { return ran.load(); }, 0);
+		CHECK(std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(50));
+		pool.stop();
+	}
+
+	//helpUntil rechecks conditions that change outside of the pool
+	{
+		threads::WorkPool pool;
+		std::atomic<bool> flag(false);
+		runThreads(2, [&](int index) {
+			if(index == 0) {
+				sleepMs(10);
+				flag = true;
+			}
+			else {
+				pool.helpUntil([&] { return flag.load(); }, 0, 0.001);
+			}
+		});
+		CHECK(flag.load());
+	}
+
+	//Stopping discards queued jobs and can be restarted
+	{
+		threads::WorkPool pool;
+		std::atomic<int> count(0);
+		pool.start(1, "test");
+		pool.hold(0);
+		pool.push(0, [&] { ++count; });
+		pool.stop();
+		CHECK(count.load() == 0);
+		pool.start(1, "test");
+		pool.push(0, [&] { ++count; });
+		pool.helpUntil([&] { return count.load() == 1; }, 0);
+		pool.stop();
+	}
+}
+
 int main() {
 	struct { const char* name; void (*run)(); } tests[] = {
 		{ "atomic_int", testAtomicInt },
@@ -254,6 +365,7 @@ int main() {
 		{ "ReadWriteMutex", testReadWriteMutex },
 		{ "Signal", testSignal },
 		{ "thread info", testThreadInfo },
+		{ "WorkPool", testWorkPool },
 	};
 	for(auto& test : tests) {
 		int before = failures;

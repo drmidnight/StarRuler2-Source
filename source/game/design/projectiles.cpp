@@ -622,16 +622,17 @@ public:
 			activeProjThreads.signalDown();
 	}
 
-	bool run() {
+	//The host starts a pass over all projectiles each frame, with four helpers
+	processing::ActionResult run() {
 		if(host && activeProjThreads.check(0)) {
 			if(EndProjectiles)
-				return true;
+				return processing::AR_Done;
 			ProjectilesActive = true;
 
 			if(PauseProjectiles) {
 				ProjectilesActive = false;
 				ProjectilesPaused = true;
-				return false;
+				return processing::AR_NextFrame;
 			}
 			else if(ProjectilesPaused) {
 				ProjectilesPaused = false;
@@ -647,7 +648,7 @@ public:
 			}
 			else {
 				ProjectilesActive = false;
-				return false;
+				return processing::AR_NextFrame;
 			}
 		}
 
@@ -658,12 +659,12 @@ public:
 			if(index >= (int)source->size()) {
 				if(host) {
 					ProjectilesActive = false;
-					return false;
+					return processing::AR_NextFrame;
 				}
 				else {
 					active = false;
 					activeProjThreads.signalDown();
-					return true;
+					return processing::AR_Done;
 				}
 			}
 
@@ -687,7 +688,7 @@ public:
 			}
 		}
 
-		return false;
+		return processing::AR_Again;
 	}
 };
 

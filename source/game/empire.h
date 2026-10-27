@@ -80,6 +80,9 @@ public:
 	bool hasMessages() const { return messageCount.load(std::memory_order_relaxed) != 0; }
 	void processMessages(unsigned maxMessages = 0xffffffff);
 	void queueMessage(EmpireMessage* msg);
+	//Changes whenever the empire's message thread should wake up
+	std::atomic<unsigned> wakeCount{0};
+	void wake();
 
 	unsigned char id;
 	int index;

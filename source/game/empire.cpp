@@ -260,6 +260,12 @@ void Empire::queueMessage(EmpireMessage* msg) {
 	messages.push_back(msg);
 	messageCount.store(messages.size(), std::memory_order_relaxed);
 	msgLock.release();
+	wake();
+}
+
+void Empire::wake() {
+	wakeCount.fetch_add(1);
+	wakeCount.notify_one();
 }
 
 void Empire::recordStat(unsigned id, int value) {

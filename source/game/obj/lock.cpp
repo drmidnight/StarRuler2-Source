@@ -29,23 +29,27 @@ extern Threaded(ProcessingData*) threadProc;
 	#define SCRIPT_GC_INTERVAL 0.05
 #endif
 
-threads::atomic_int tickingLocks;
 threads::atomic_int remainingMessages, queuedChildren;
 std::vector<LockGroup*> lockGroups;
 
-std::deque<LockGroup*> lockQueue;
-//The size of lockQueue, to check for work without taking lockQueueLock
-std::atomic<size_t> lockQueueSize;
-
 #ifdef PROFILE_LOCKS
-threads::Mutex lockQueueLock("lockQueueLock");
-threads::Mutex lockGlobalLock("lockGlobalLock");
 threads::Mutex switchedLock("switchedLock");
 #else
-threads::Mutex lockQueueLock;
-threads::Mutex lockGlobalLock;
 threads::Mutex switchedLock;
 #endif
+
+//Objects ticked by each lock group job before it lets other jobs run
+const int GROUP_TICK_LIMIT = 300;
+//Messages processed by each message job before it lets other jobs run
+const int GROUP_MESSAGE_LIMIT = 16;
+//How long to wait before trying again to process the messages of a group someone else holds
+const double MESSAGE_RETRY_DELAY = 0.0005;
+
+//The running lock cycle, and whether another was requested while it ran
+std::atomic<bool> cycleRunning = false, cycleRequested = false;
+//Lock groups still ticking in the running cycle, and the game time they tick to
+std::atomic<int> cycleGroupsLeft = 0;
+double cycleTime = 0;
 
 std::vector<Object*> switchedObjects;
 Threaded(LockGroup*) activeLockGroup = 0;
@@ -131,7 +135,7 @@ void printLockStats() {
 }
 
 LockGroup::LockGroup()
-	: tickIndex(0) {
+	: tickIndex(0), messagesScheduled(false) {
 #ifdef PROFILE_LOCKS
 	mutex.name = "LockGroup "+toString(getLockCount());
 	mutex.observed = true;
@@ -170,26 +174,10 @@ void tickSwitchedObjects(double time) {
 }
 
 double lastLockGlobalUpdate = 0.0;
-bool updateLockGlobals(double time) {
-	if(lockGroups.empty() || Object::GALAXY_CREATION)
-		return false;
-	if(time < lastLockGlobalUpdate + 0.001)
-		return false;
-
-	lockGlobalLock.lock();
-	lockQueueLock.lock();
-
-	double prevUpdate = lastLockGlobalUpdate;
+//The global step, run once all lock groups have ticked
+void updateLockGlobals(double time) {
+	prevTick_s = time - lastLockGlobalUpdate;
 	lastLockGlobalUpdate = time;
-
-	if(lockQueue.size() + tickingLocks != 0) {
-		lockGlobalLock.release();
-		lockQueueLock.release();
-		return true;
-	}
-
-	prevTick_s = time - prevUpdate;
-	lockQueueLock.release();
 
 	SIGNPOST_INTERVAL("Lock globals");
 
@@ -296,15 +284,130 @@ bool updateLockGlobals(double time) {
 	processing::resumeMessageHandling();
 	if(doGC)
 		devices.scripts.server->resumeScriptThreads();
+}
 
-	//Queue up all locks for ticking again
-	lockQueueLock.lock();
-	foreach(it, lockGroups)
-		lockQueue.push_back(*it);
-	lockQueueSize.store(lockQueue.size(), std::memory_order_relaxed);
-	lockQueueLock.release();
-	lockGlobalLock.release();
-	return true;
+void tickGroupJob(LockGroup* group);
+
+//Starts the requested cycle unless one is running. A cycle that finishes calls
+//this again, so a request made while it ran is not lost.
+void tryStartLockCycle() {
+	while(cycleRequested.load()) {
+		bool expected = false;
+		if(!cycleRunning.compare_exchange_strong(expected, true))
+			return;
+		if(!cycleRequested.exchange(false)) {
+			//Someone else started the requested cycle
+			cycleRunning = false;
+			continue;
+		}
+
+		//Groups don't tick while the galaxy is being made
+		if(lockGroups.empty() || Object::GALAXY_CREATION) {
+			cycleRunning = false;
+			return;
+		}
+
+		cycleTime = devices.driver->getGameTime();
+		cycleGroupsLeft = (int)lockGroups.size();
+		for(auto* group : lockGroups)
+			processing::queueJob(processing::L_Tick, [group] { tickGroupJob(group); });
+		return;
+	}
+}
+
+void requestLockCycle() {
+	cycleRequested = true;
+	tryStartLockCycle();
+}
+
+void tickGroupJob(LockGroup* group) {
+#ifdef TRACE_GC_LOCK
+	devices.scripts.server->markGCImpossible();
+#endif
+	bool finished = group->process(cycleTime, GROUP_TICK_LIMIT);
+#ifdef TRACE_GC_LOCK
+	devices.scripts.server->markGCPossible();
+#endif
+#ifdef PROFILE_PROCESSING
+	processing::profileProcessing();
+#endif
+
+	//Let other groups have a turn before continuing
+	if(!finished) {
+		processing::queueJob(processing::L_Tick, [group] { tickGroupJob(group); });
+		return;
+	}
+
+	if(--cycleGroupsLeft != 0)
+		return;
+
+	updateLockGlobals(devices.driver->getGameTime());
+	cycleRunning = false;
+	tryStartLockCycle();
+}
+
+void resetLockScheduling() {
+	cycleRunning = false;
+	cycleRequested = false;
+	cycleGroupsLeft = 0;
+	for(auto* group : lockGroups) {
+		group->messagesScheduled = false;
+		if(group->hasMessages())
+			scheduleMessages(group);
+	}
+}
+
+void processMessagesJob(LockGroup* group);
+
+void scheduleMessages(LockGroup* group) {
+	if(!group->messagesScheduled.exchange(true))
+		processing::queueJob(processing::L_Message, [group] { processMessagesJob(group); });
+}
+
+void processMessagesJob(LockGroup* group) {
+	group->messagesScheduled = false;
+	if(!group->hasMessages())
+		return;
+
+	//Whoever holds the group handles its messages, and queues a job for any left
+	//when it unlocks. Trying again later covers a message added just as it unlocked.
+	bool contended = true;
+	if(!activeLockGroup) {
+		devices.scripts.server->threadedCallMutex.readLock();
+		if(group->mutex.try_lock()) {
+			activeLockGroup = group;
+			group->processMessages(GROUP_MESSAGE_LIMIT);
+			activeLockGroup = 0;
+			group->mutex.release();
+			contended = false;
+		}
+		devices.scripts.server->threadedCallMutex.release();
+	}
+
+	if(!group->hasMessages())
+		return;
+	if(!contended)
+		scheduleMessages(group);
+	else if(!group->messagesScheduled.exchange(true))
+		processing::queueJobAfter(processing::L_Message, MESSAGE_RETRY_DELAY, [group] { processMessagesJob(group); });
+}
+
+void drainLockQueues() {
+	while(hasRemainingMessages() || hasQueuedChildren()) {
+		bool progress = false;
+		if(!activeLockGroup) {
+			for(auto* group : lockGroups) {
+				if(!group->addQueue.empty()) {
+					devices.scripts.server->threadedCallMutex.readLock();
+					group->acquireChildren();
+					devices.scripts.server->threadedCallMutex.release();
+				}
+			}
+			progress = tickRandomMessages();
+		}
+		if(!progress)
+			threads::idle();
+	}
 }
 
 bool tickRandomMessages(int limit) {
@@ -336,21 +439,6 @@ bool tickRandomMessages(int limit) {
 	return false;
 }
 
-void acquireRandomChildren() {
-	if(lockGroups.empty())
-		return;
-	if(activeLockGroup)
-		throw "Can't lock multiple lock groups.";
-
-	LockGroup* lock = lockGroups[randomi(0,(int)lockGroups.size()-1)];
-
-	if(!lock->addQueue.empty()) {
-		devices.scripts.server->threadedCallMutex.readLock();
-		lock->acquireChildren();
-		devices.scripts.server->threadedCallMutex.release();
-	}
-}
-
 void tickLockMessages(LockGroup* lock, int limit) {
 	if(activeLockGroup)
 		throw "Can't lock multiple lock groups.";
@@ -367,61 +455,13 @@ void tickLockMessages(LockGroup* lock, int limit) {
 	}
 }
 
-//Find a random lock group that's still queued up for ticking and tick it, or
-//update global data and requeue if the queue is empty.
-bool tickRandomLock(double time, int limit) {
-	if(lockQueueSize.load(std::memory_order_relaxed) == 0) {
-		if(tickingLocks == 0)
-			return updateLockGlobals(time);
-		else
-			return false;
-	}
-
-	lockQueueLock.lock();
-	LockGroup* lock = nullptr;
-	if(!lockQueue.empty()) {
-		for(unsigned i = 0, cnt = lockQueue.size(); i < cnt; ++i) {
-			lock = lockQueue.front();
-			lockQueue.pop_front();
-			if(!lock->hasLock())
-				break;
-			lockQueue.push_back(lock);
-			lock = nullptr;
-		}
-		if(lock)
-			++tickingLocks;
-	}
-	lockQueueSize.store(lockQueue.size(), std::memory_order_relaxed);
-	lockQueueLock.release();
-
-	if(!lock)
-		return false;
-
-#ifdef TRACE_GC_LOCK
-	devices.scripts.server->markGCImpossible();
-#endif
-
-	if(!lock->process(time, limit)) {
-		lockQueueLock.lock();
-		lockQueue.push_back(lock);
-		lockQueueSize.store(lockQueue.size(), std::memory_order_relaxed);
-		lockQueueLock.release();
-	}
-
-#ifdef TRACE_GC_LOCK
-	devices.scripts.server->markGCPossible();
-#endif
-
-	--tickingLocks;
-	return true;
-}
-
 void LockGroup::addMessage(ObjectMessage* message) {
 	remainingMessages++;
 	messageLock.lock();
 	messages.push_back(message);
 	messageCount.store(messages.size(), std::memory_order_relaxed);
 	messageLock.release();
+	scheduleMessages(this);
 }
 
 void LockGroup::add(Object* obj) {
@@ -727,13 +767,6 @@ bool LockGroup::process(double time, int limit) {
 
 				if(hasMessages())
 					processMessages();
-
-				//We need to sleep periodically to guarantee progress at high cpu utilization
-				if(i % 1024 == 0) {
-					unlockGroup(this);
-					threads::sleep(1);
-					lockGroup(this);
-				}
 			}
 
 			++tickIndex;
@@ -761,24 +794,18 @@ LockGroup* getRandomLock() {
 }
 
 void initLocks(unsigned lockCount) {
-	assert(tickingLocks == 0);
-	lockQueueLock.lock();
+	assert(!cycleRunning);
 	for(unsigned i = 0; i < lockCount; ++i) {
 		LockGroup* lock = new LockGroup();
 		lock->id = i;
 		lockGroups.push_back(lock);
-		lockQueue.push_back(lock);
 	}
-	lockQueueSize.store(lockQueue.size(), std::memory_order_relaxed);
-	lockQueueLock.release();
 }
 
 void destroyLocks() {
 	foreach(it, lockGroups)
 		delete *it;
 	lockGroups.clear();
-	lockQueue.clear();
-	lockQueueSize = 0;
 }
 
 LockGroup* lockObject(Object* obj, bool priority) {
@@ -880,6 +907,9 @@ inline void _unlockGroup(LockGroup* lock) {
 		if(!lock->hasLock()) {
 			if(lock == activeLockGroup)
 				activeLockGroup = 0;
+			//Messages that arrived while the group was held
+			if(lock->hasMessages())
+				scheduleMessages(lock);
 		}
 	}
 }

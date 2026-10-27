@@ -137,6 +137,7 @@ extern std::set<std::string> validPaths;
 
 extern void prepareShaderStateVars();
 extern void clearShaderStateVars();
+//Number of lock groups the objects are divided between
 int threadCount;
 
 extern bool queuedModSwitch;
@@ -363,8 +364,8 @@ bool initGlobal(bool loadGraphics, bool createWindow) {
 	//Create processing queue
 	unsigned cpuCount = devices.driver->getProcessorCount();
 	threadCount = std::max(cpuCount+1,1u);
-	print("Starting %d threads on %d processors.", threadCount, cpuCount);
-	processing::start(threadCount);
+	print("Starting %d workers on %d processors.", threads::getPerformanceCores(), cpuCount);
+	processing::start(threads::getPerformanceCores(), threadCount);
 
 	return true;
 }
@@ -1427,7 +1428,7 @@ void initGame() {
 	if(!processing::isRunning()) {
 		unsigned cpuCount = devices.driver->getProcessorCount();
 		threadCount = std::max(cpuCount+1,1u);
-		processing::start(threadCount);
+		processing::start(threads::getPerformanceCores(), threadCount);
 	}
 	Empire::initEmpires();
 
@@ -1594,8 +1595,6 @@ void destroyGame() {
 	}
 	
 	//Destroy scene
-	extern void endAnimation();
-	endAnimation();
 
 	extern void clearProjectileBatches();
 	clearProjectileBatches();

@@ -86,7 +86,7 @@ public:
 		: time(Time), gcLock(Gc), manager(Manager), logTime(LogTime) {
 	}
 
-	bool run() {
+	processing::ActionResult run() {
 		SIGNPOST_INTERVAL("Script tick", "%{public}s", scriptManagerName(manager));
 		auto prevSection = enterSection(NS_ScriptTick);
 		double start = devices.driver->getAccurateTime();
@@ -111,7 +111,7 @@ public:
 #endif
 		logTime = devices.driver->getAccurateTime() - start;
 		enterSection(prevSection);
-		return true;
+		return processing::AR_Done;
 	}
 };
 
@@ -123,7 +123,7 @@ public:
 		: manager(Manager), full(FullCycle) {
 	}
 
-	bool run() {
+	processing::ActionResult run() {
 		SIGNPOST_INTERVAL("Script GC", "%{public}s%{public}s", scriptManagerName(manager), full ? " (full)" : "");
 		double start = devices.driver->getAccurateTime();
 		manager->pauseScriptThreads();
@@ -146,134 +146,35 @@ public:
 #endif
 
 		scriptTickSignal.signalDown();
-		return true;
+		return processing::AR_Done;
 	}
 };
 
-unsigned animationThreadCount = 6;
-threads::Signal animationSignal, activeAnimCount;
-threads::Mutex animDataLock;
 double nearestNode = 9.0e35, furthestNode = 0.0;
 double animation_s = 0.0, render_s = 0.0, present_s = 0.0;
-threads::atomic_int animIndex(-1), animProcessed;
 
-//Animates some nodes, returning how long it processed
-double animateSomeNodes(int maxNodes) {
-	if(animIndex < 0)
-		return 0.0;
+//Scene nodes animated by each frame job
+const int ANIM_CHUNK_NODES = 128;
+//Per chunk results, reduced once all chunks are done
+std::vector<double> animChunkFurthest, animChunkTime;
+std::atomic<int> animChunksLeft = 0;
 
-	double furthest = 0.0;
+void animateChunk(scene::Node** nodes, int count, int chunk) {
+	auto prevSection = enterSection(NS_Animation);
 	double start = devices.driver->getAccurateTime();
+	double furthest = 0.0;
+	for(int i = chunk * ANIM_CHUNK_NODES, end = std::min(count, i + ANIM_CHUNK_NODES); i < end; ++i) {
+		auto* node = nodes[i];
+		node->animate();
 
-	auto* nodes = &devices.scene->children.front();
-	int count = (int)devices.scene->children.size();
-	int animCount = count/(animationThreadCount*16);
-	if(animCount == 0)
-		animCount = 1;
-
-	int index = (animIndex -= animCount);
-	while(index >= 0) {
-		int animated = 0;
-		for(int i = index; i > index - animCount && i >= 0; --i) {
-			auto* node = nodes[i];
-			node->animate();
-			++animated;
-			
-			double d = node->sortDistance + node->abs_scale;
-			if(d > furthest)
-				furthest = d;
-		}
-
-		if(animated != 0)
-			animProcessed += animated;
-		
-		maxNodes -= animated;
-		if(maxNodes < 0)
-			break;
-
-		index = (animIndex -= animCount);
+		double d = node->sortDistance + node->abs_scale;
+		if(d > furthest)
+			furthest = d;
 	}
-
-	animDataLock.lock();
-	//if(nearest < nearestNode)
-	//	nearestNode = nearest;
-	if(furthest > furthestNode)
-		furthestNode = furthest;
-	animDataLock.release();
-
-	return devices.driver->getAccurateTime() - start;
-}
-
-std::atomic<bool> EndAnimationThreads = false;
-threads::threadreturn threadcall animateNodes(void* arg) {
-	enterSection(NS_Animation);
-	threads::setThreadPriority(threads::TP_High);
-	double& logTime = *(double*)arg;
-	initNewThread();
-	activeAnimCount.signalUp();
-	//threads::setThreadPriority(threads::TP_High);
-
-#ifdef TRACE_GC_LOCK
-	devices.scripts.menu->markGCImpossible();
-	devices.scripts.client->markGCImpossible();
-#endif
-	while(true) {
-		while(animIndex < 0 && !EndAnimationThreads)
-			threads::sleep(1);
-		if(EndAnimationThreads)
-			break;
-
-		animationSignal.signalUp();
-
-		double /*nearest = 9.0e35,*/ furthest = 0.0;
-		double start = devices.driver->getAccurateTime();
-
-		if(!devices.scene->children.empty()) {
-			auto* nodes = &devices.scene->children.front();
-			int animCount = (int)devices.scene->children.size()/(animationThreadCount*16);
-			if(animCount == 0)
-				animCount = 1;
-
-			int index = (animIndex -= animCount);
-			while(index >= 0) {
-				int animated = 0;
-				for(int i = index; i > index - animCount && i >= 0; --i) {
-					auto* node = nodes[i];
-					node->animate();
-					++animated;
-			
-					double d = node->sortDistance + node->abs_scale;
-					if(d > furthest)
-						furthest = d;
-				}
-
-				if(animated != 0)
-					animProcessed += animated;
-
-				index = (animIndex -= animCount);
-			}
-		}
-
-		logTime = devices.driver->getAccurateTime() - start;
-
-		animDataLock.lock();
-		//if(nearest < nearestNode)
-		//	nearestNode = nearest;
-		if(furthest > furthestNode)
-			furthestNode = furthest;
-		animDataLock.release();
-
-		animationSignal.signalDown();
-		threads::sleep(1);
-	}
-#ifdef TRACE_GC_LOCK
-	devices.scripts.menu->markGCPossible();
-	devices.scripts.client->markGCPossible();
-#endif
-
-	activeAnimCount.signalDown();
-	cleanupThread();
-	return 0;
+	animChunkFurthest[chunk] = furthest;
+	animChunkTime[chunk] = devices.driver->getAccurateTime() - start;
+	enterSection(prevSection);
+	--animChunksLeft;
 }
 
 double frameLen_s = 0, frameTime_s = 0;
@@ -341,7 +242,6 @@ bool requireObserved = false;
 #endif
 
 double menuTickTime = 0, serverTickTime = 0, clientTickTime = 0, animationTime = 0;
-double* animTimes = nullptr;
 
 extern double lastLockGlobalUpdate, nextTargetUpdateTime, nextScriptGCTime;
 
@@ -349,16 +249,6 @@ void resetGameTime() {
 	nextTargetUpdateTime = lastLockGlobalUpdate = devices.driver->getGameTime();
 	frameTime_s = devices.driver->getGameTime() - 0.25;
 	nextScriptGCTime = devices.driver->getFrameTime();
-}
-
-void endAnimation() {
-	if(animTimes) {
-		EndAnimationThreads = true;
-		activeAnimCount.wait(0);
-		EndAnimationThreads = false;
-		delete[] animTimes;
-		animTimes = nullptr;
-	}
 }
 
 void idleLoadResources(int maxPriority) {
@@ -434,6 +324,9 @@ void tickGlobal(bool hasScripts) {
 	//Run network manager tick
 	devices.network->tick(realFrameLen);
 
+	//Start this frame's simulation cycle
+	processing::frame();
+
 	//Do lock profiling
 #ifdef PROFILE_LOCKS
 	lockProfileTimer += frame_s;
@@ -480,10 +373,7 @@ void tickGlobal(bool hasScripts) {
 
 		fullGC = false;
 
-		while(!scriptTickSignal.check(0)) {
-			processing::run();
-			threads::sleep(0);
-		}
+		processing::helpUntil([] { return scriptTickSignal.check(0); });
 	}
 
 #ifdef TRACE_GC_LOCK
@@ -583,17 +473,15 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 	nearestNode = 9.0e35; furthestNode = 0.0;
 
 	static bool dumpAnimTimes = false;
-	if(!animTimes) {
-		animationThreadCount = std::max(1u,devices.driver->getProcessorCount()-1);
-		animTimes = new double[animationThreadCount]();
-		for(unsigned i = 0; i < animationThreadCount; ++i)
-			threads::createThread(animateNodes, &animTimes[i], "sr2-animation");
 #ifdef PROFILE_ANIMATION
+	static bool addedAnimCommand = false;
+	if(!addedAnimCommand) {
+		addedAnimCommand = true;
 		console.addCommand("anim_times", [](argList& args) {
 			dumpAnimTimes = true;
 		}, true);
-#endif
 	}
+#endif
 
 	render::Texture* rt = nullptr;
 	const render::Shader* shad = nullptr;
@@ -622,41 +510,28 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 	double animTotal = 0.0;
 	{
 		SIGNPOST_INTERVAL("Animate");
+
+		//Animate nodes in chunks on the workers, while this thread helps and
+		//waits for the script ticks to finish too
 		int nodeCount = (int)devices.scene->children.size();
-		animProcessed = 0;
+		int chunks = (nodeCount + ANIM_CHUNK_NODES - 1) / ANIM_CHUNK_NODES;
+		animChunkFurthest.assign(chunks, 0.0);
+		animChunkTime.assign(chunks, 0.0);
+		animChunksLeft = chunks;
+		auto* nodes = nodeCount != 0 ? &devices.scene->children.front() : nullptr;
+		for(int i = 0; i < chunks; ++i)
+			processing::queueJob(processing::L_Frame, [nodes, nodeCount, i] { animateChunk(nodes, nodeCount, i); });
 
-		//Animate nodes, signaling the animation threads to work if they get time
-		animIndex = nodeCount-1;
-		unsigned loops = 0;
-		while(true) {
-			bool waiting = false;
+		processing::helpUntil([] { return animChunksLeft.load() == 0 && scriptTickSignal.check(0); });
 
-			if(!scriptTickSignal.check(0)) {
-				waiting = true;
-				processing::run(true);
-			}
-			if(animProcessed != nodeCount) {
-				waiting = true;
-				animTotal += animateSomeNodes(128);
-			}
-
-			if(!waiting)
-				break;
-			if(++loops % 100 == 0)
-				threads::sleep(0);
+		for(int i = 0; i < chunks; ++i) {
+			if(animChunkFurthest[i] > furthestNode)
+				furthestNode = animChunkFurthest[i];
+			animTotal += animChunkTime[i];
 		}
 
 		//Sort the catch-all parent
 		devices.scene->sortChildren();
-
-		//Wait for all animation threads to report in
-		while(!animationSignal.check(0))
-			threads::sleep(0);
-
-		for(unsigned i = 0; i < animationThreadCount; ++i) {
-			double t = animTimes[i];
-			animTotal += t;
-		}
 #ifdef PROFILE_ANIMATION
 		if(dumpAnimTimes)
 			scene::dumpAnimationProfile();

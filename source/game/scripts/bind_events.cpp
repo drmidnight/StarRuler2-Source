@@ -626,7 +626,7 @@ class IsolateAction : public processing::Action {
 public:
 	IsolateAction(asIScriptObject* object) : obj(object) {}
 
-	bool run() {
+	processing::ActionResult run() {
 		auto* func = obj->GetObjectType()->GetMethodByDecl("void call()");
 		if(func) {
 			auto& mana = scripts::Manager::fromEngine(obj->GetEngine());
@@ -634,7 +634,7 @@ public:
 			call.setObject(obj);
 			call.call();
 		}
-		return true;
+		return processing::AR_Done;
 	}
 	
 	~IsolateAction() {

@@ -26,6 +26,8 @@ struct LockGroup {
 	//The size of messages, to check for work without taking messageLock
 	std::atomic<unsigned> messageCount;
 	bool hasMessages() const { return messageCount.load(std::memory_order_relaxed) != 0; }
+	//Whether a job to process the messages is queued
+	std::atomic<bool> messagesScheduled;
 	std::unordered_map<Object*, std::vector<ObjectMessage*>*> deferredMessages;
 	threads::Mutex messageLock;
 
@@ -62,8 +64,15 @@ unsigned getLockCount();
 LockGroup* getLock(unsigned index);
 void printLockStats();
 
-void acquireRandomChildren();
-bool tickRandomLock(double time, int limit = 1000);
+//Starts a cycle that ticks every lock group once, then runs the global step.
+//If a cycle is already running, another starts right after it.
+void requestLockCycle();
+//Forgets jobs that were discarded when processing stopped, and queues any that are needed
+void resetLockScheduling();
+//Waits until no messages are left and no objects are waiting to join a lock group
+void drainLockQueues();
+//Queues a job to process the group's messages, unless one is queued already
+void scheduleMessages(LockGroup* group);
 //Returns whether it processed any messages
 bool tickRandomMessages(int limit = 100);
 //Attempts to process the messages in a particular group, with no guarantee of any success

@@ -1,9 +1,9 @@
 #include "processing.h"
 #include "main/references.h"
 #include "threads.h"
+#include "work_pool.h"
 #include "main/initialization.h"
 #include "main/logging.h"
-#include "util/random.h"
 #include "scripts/context_cache.h"
 #include "obj/lock.h"
 #include "design/projectiles.h"
@@ -11,42 +11,73 @@
 #include <deque>
 #include <atomic>
 
-extern threads::atomic_int remainingEmpireMessages;
-
 namespace processing {
-	
-threads::threadreturn threadcall process(void* data);
-threads::threadreturn threadcall messageProcess(void* data);
+
 threads::threadreturn threadcall empireMessageProcess(void* data);
 
-int threadCount = 0;
-std::atomic<bool> stopProcessing = false, pauseProcessing = false, pauseMessageHandlers = false;
-threads::Signal threadsActive, msgHandlersActive;
+//Runs lock group ticks, actions and frame jobs
+threads::WorkPool pool;
+//Runs messages to lock groups. Jobs on the main pool can wait for a message to be
+//handled, so messages get their own threads, which a waiting job can never use up.
+threads::WorkPool messagePool;
+std::atomic<bool> stopProcessing = false, paused = false;
 
 threads::Mutex actionLock;
-std::deque<Action*> process_queue;
+//Actions waiting to run, each with a job queued on L_Action to run it
+std::deque<Action*> actionQueue;
+//Actions waiting for the next frame
+std::vector<Action*> frameActions;
 std::vector<Action*> isolation_queue;
-//Queue sizes, to check for work without taking actionLock
-std::atomic<size_t> processQueued, isolationQueued;
+//Queue size, to check for work without taking actionLock
+std::atomic<size_t> isolationQueued;
+
+//Empires with a message thread, and how many of those threads are running
+threads::Mutex empireThreadLock;
+std::vector<Empire*> empireThreads;
+threads::Signal empireThreadsActive;
 
 #ifdef PROFILE_PROCESSING
 Threaded(ProcessingData*) threadProc;
 #endif
 
-unsigned idleObjectTickCount = 25, activeObjectTickCount = 300;
+void runNextAction();
 
 void queueAction(Action* action) {
-	actionLock.lock();
-	process_queue.push_back(action);
-	processQueued.store(process_queue.size(), std::memory_order_relaxed);
-	actionLock.release();
+	{
+		threads::Lock lock(actionLock);
+		actionQueue.push_back(action);
+	}
+	pool.push(L_Action, runNextAction);
 }
 
 void queueIsolationAction(Action* action) {
-	actionLock.lock();
+	threads::Lock lock(actionLock);
 	isolation_queue.push_back(action);
 	isolationQueued.store(isolation_queue.size(), std::memory_order_relaxed);
-	actionLock.release();
+}
+
+void runNextAction() {
+	Action* action = nullptr;
+	{
+		threads::Lock lock(actionLock);
+		if(actionQueue.empty())
+			return;
+		action = actionQueue.front();
+		actionQueue.pop_front();
+	}
+
+	switch(action->run()) {
+		case AR_Done:
+			delete action;
+		break;
+		case AR_Again:
+			queueAction(action);
+		break;
+		case AR_NextFrame: {
+			threads::Lock lock(actionLock);
+			frameActions.push_back(action);
+		} break;
+	}
 }
 
 void runIsolation() {
@@ -64,48 +95,81 @@ void runIsolation() {
 	processing::resume();
 }
 
-Action* popAction() {
-	if(processQueued.load(std::memory_order_relaxed) == 0)
-		return 0;
-	actionLock.lock();
-	Action* action = 0;
-	if(!process_queue.empty()) {
-		action = process_queue.back();
-		process_queue.pop_back();
-		processQueued.store(process_queue.size(), std::memory_order_relaxed);
-	}
-	actionLock.release();
-	return action;
+void queueJob(Lane lane, std::function<void()> job) {
+	if(lane == L_Message)
+		messagePool.push(0, std::move(job));
+	else
+		pool.push(lane, std::move(job));
 }
 
-void start(unsigned threads) {
-#ifdef PROFILE_PROCESSING
-	if(!threadProc)
-		threadProc = new ProcessingData();
-#endif
+void queueJobAfter(Lane lane, double seconds, std::function<void()> job) {
+	if(lane == L_Message)
+		messagePool.pushAfter(0, seconds, std::move(job));
+	else
+		pool.pushAfter(lane, seconds, std::move(job));
+}
 
-	stopProcessing = false;
-	threadCount = threads;
-	threadsActive.signal(threads);
-	msgHandlersActive.signal(threads);
-	for(unsigned i = 0; i < threads; ++i) {
-#ifdef PROFILE_PROCESSING
-		threads::createThread(process, new ProcessingData(), "sr2-simulation");
-#else
-		threads::createThread(process, nullptr, "sr2-simulation");
-#endif
-		threads::createThread(messageProcess, nullptr, "sr2-messages");
+void helpUntil(const std::function<bool()>& done) {
+	pool.helpUntil(done, (1u << L_Frame) | (1u << L_Action));
+}
+
+void frame() {
+	{
+		threads::Lock lock(actionLock);
+		for(auto* action : frameActions) {
+			actionQueue.push_back(action);
+			pool.push(L_Action, runNextAction);
+		}
+		frameActions.clear();
 	}
+
+	if(!stopProcessing && pool.isRunning())
+		requestLockCycle();
+}
+
+void start(unsigned workers, unsigned messageWorkers) {
+	stopProcessing = false;
+	paused = false;
+	messagePool.start(messageWorkers, "sr2-messages",
+		[] {
+			enterSection(NS_MessageThread);
+			threads::setThreadPriority(threads::TP_High);
+			initNewThread();
+		},
+		[] {
+			cleanupThread();
+		});
+	pool.start(workers, "sr2-worker",
+		[] {
+			enterSection(NS_Processing);
+			threads::setThreadPriority(threads::TP_High);
+#ifdef PROFILE_PROCESSING
+			threadProc = new ProcessingData();
+#endif
+			initNewThread();
+		},
+		[] {
+			cleanupThread();
+		});
+	resetLockScheduling();
 }
 
 void end() {
 	stopProcessing = true;
-	threadsActive.wait(0);
-	msgHandlersActive.wait(0);
+	{
+		threads::Lock lock(empireThreadLock);
+		for(auto* emp : empireThreads)
+			emp->wake();
+		empireThreads.clear();
+	}
+	empireThreadsActive.wait(0);
+	pool.stop();
+	messagePool.stop();
+	paused = false;
 }
 
 bool isRunning() {
-	return !threadsActive.check(0);
+	return pool.isRunning() && !paused;
 }
 
 void clear() {
@@ -115,10 +179,14 @@ void clear() {
 		devices.scripts.cache_shadow->clearScriptThreads();
 	if(devices.scripts.client)
 		devices.scripts.client->clearScriptThreads();
-	foreach(it, process_queue)
+
+	threads::Lock lock(actionLock);
+	foreach(it, actionQueue)
 		delete *it;
-	process_queue.clear();
-	processQueued = 0;
+	actionQueue.clear();
+	foreach(it, frameActions)
+		delete *it;
+	frameActions.clear();
 }
 
 void pause() {
@@ -129,23 +197,25 @@ void pause() {
 		devices.scripts.cache_shadow->pauseScriptThreads();
 	if(devices.scripts.client)
 		devices.scripts.client->pauseScriptThreads();
-	pauseProcessing = true;
-	threadsActive.wait(0);
-	while(hasRemainingMessages())
-		threads::idle();
-	pauseMessageHandlers = true;
-	while(hasRemainingMessages())
-		threads::idle();
-	msgHandlersActive.wait(0);
+
+	if(!paused.exchange(true)) {
+		pool.hold(L_Action);
+		pool.hold(L_Tick);
+	}
+	pool.waitIdle(L_Action);
+	pool.waitIdle(L_Tick);
+
+	//Objects waiting to join a lock group, and all messages, are handled before pausing
+	drainLockQueues();
 }
 
 void resume() {
-	pauseProcessing = false;
-	pauseMessageHandlers = false;
+	if(paused.exchange(false)) {
+		pool.release(L_Tick);
+		pool.release(L_Action);
+	}
 	if(stopProcessing)
 		return;
-	threadsActive.waitNot(0);
-	msgHandlersActive.waitNot(0);
 	if(devices.scripts.cache_server)
 		devices.scripts.cache_server->resumeScriptThreads();
 	if(devices.scripts.cache_shadow)
@@ -156,21 +226,19 @@ void resume() {
 }
 
 void pauseMessageHandling() {
-	pauseMessageHandlers = true;
-	while(hasRemainingMessages())
-		threads::idle();
-	msgHandlersActive.wait(0);
+	//Wait for a moment with no messages left. Empire messages are handled on their
+	//own threads, so the condition is also rechecked on a timer.
+	messagePool.helpUntil([] { return !hasRemainingMessages(); }, ~0u, 0.0005);
 }
 
 void resumeMessageHandling() {
-	pauseMessageHandlers = false;
 }
 
 #ifdef PROFILE_PROCESSING
 threads::atomic_int printProcProfile;
 
 void printProcessingProfile() {
-	printProcProfile = threadCount + 1;
+	printProcProfile = pool.workerCount() + 1;
 }
 
 ProcessingData::ProcessingData() {
@@ -202,6 +270,8 @@ void ProcessingData::measureType(int type, double time, int amount) {
 }
 
 void profileProcessing() {
+	if(!threadProc)
+		return;
 	double curTime = devices.driver->getAccurateTime();
 	if(curTime >= threadProc->syncTimer) {
 		if(printProcProfile > 0) {
@@ -237,58 +307,16 @@ void profileProcessing() {
 }
 #endif
 
-void run(bool onlyActions) {
-	Action* cur_action = popAction();
-	if(cur_action) {
-		if(cur_action->run())
-			delete cur_action;
-		else
-			queueAction(cur_action);
-	}
-	else if(!onlyActions) {
-		double time = devices.driver->getGameTime();
-		tickRandomLock(time, idleObjectTickCount);
-	}
-
-#ifdef PROFILE_PROCESSING
-	profileProcessing();
-#endif
-}
-
-threads::threadreturn threadcall messageProcess(void* data) {
-	enterSection(NS_MessageThread);
-	threads::setThreadPriority(threads::TP_High);
-	initNewThread();
-
-	while(!stopProcessing) {
-		if(hasRemainingMessages()) {
-			tickRandomMessages(5);
-			threads::sleep(0);
-		}
-		else {
-			if(pauseMessageHandlers) {
-				msgHandlersActive.signalDown();
-				while(pauseMessageHandlers && !hasRemainingMessages())
-					threads::sleep(1);
-				msgHandlersActive.signalUp();
-			}
-			else {
-				threads::idle();
-			}
-		}
-	}
-
-	cleanupThread();
-	msgHandlersActive.signalDown();
-	return 0;
-}
-
 void startEmpireThread(Empire* emp) {
-	msgHandlersActive.signalUp();
+	{
+		threads::Lock lock(empireThreadLock);
+		empireThreads.push_back(emp);
+	}
+	empireThreadsActive.signalUp();
 	threads::createThread(empireMessageProcess, emp, "sr2-empire-messages");
 }
 
-threads::atomic_int nextEmpTickIndex;
+//Each empire handles its messages on its own thread, which sleeps until one arrives
 threads::threadreturn threadcall empireMessageProcess(void* data) {
 	enterSection(NS_MessageThread);
 	threads::setThreadPriority(threads::TP_High);
@@ -296,83 +324,18 @@ threads::threadreturn threadcall empireMessageProcess(void* data) {
 	initNewThread();
 
 	while(!stopProcessing) {
-		if(hasRemainingMessages()) {
-			if(emp->hasMessages()) {
-				emp->processMessages();
-			}
-			else {
-				threads::sleep(1);
-			}
+		unsigned seen = emp->wakeCount.load();
+		if(emp->hasMessages()) {
+			emp->processMessages();
+			continue;
 		}
-		else {
-			if(pauseMessageHandlers) {
-				msgHandlersActive.signalDown();
-				while(pauseMessageHandlers && !hasRemainingMessages())
-					threads::sleep(1);
-				msgHandlersActive.signalUp();
-			}
-			else {
-				threads::idle();
-			}
-		}
+		if(stopProcessing)
+			break;
+		emp->wakeCount.wait(seen);
 	}
 
 	cleanupThread();
-	msgHandlersActive.signalDown();
-	return 0;
-}
-
-threads::threadreturn threadcall process(void* data) {
-	enterSection(NS_Processing);
-	threads::setThreadPriority(threads::TP_High);
-#ifdef PROFILE_PROCESSING
-	threadProc = (ProcessingData*)data;
-#endif
-	initNewThread();
-
-	while(!stopProcessing) {
-		if(pauseProcessing) {
-			while(hasRemainingMessages() || hasQueuedChildren()) {
-				acquireRandomChildren();
-				tickRandomMessages();
-				threads::idle();
-			}
-			threadsActive.signalDown();
-			while(pauseProcessing)
-				threads::sleep(1);
-			threadsActive.signalUp();
-		}
-
-		Action* cur_action = popAction();
-		if(cur_action) {
-			if(cur_action->run()) {
-				delete cur_action;
-				threads::sleep(0);
-				continue;
-			}
-			else {
-				queueAction(cur_action);
-			}
-		}
-
-		double time = devices.driver->getGameTime();
-
-		bool didWork = tickRandomMessages();
-		if(tickRandomLock(time, activeObjectTickCount))
-			didWork = true;
-
-		//Only wait when there was nothing to do, so busy workers keep ticking
-		if(!didWork)
-			threads::idle();
-
-#ifdef PROFILE_PROCESSING
-		profileProcessing();
-#endif
-	}
-
-	cleanupThread();
-	threadsActive.signalDown();
-
+	empireThreadsActive.signalDown();
 	return 0;
 }
 

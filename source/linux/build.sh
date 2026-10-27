@@ -1,21 +1,6 @@
 #!/bin/bash
 #Builds everything needed to get binaries
 
-build_glfw() {
-	cd source/glfw
-	rm -f CMakeCache.txt
-	rm -rf CMakeFiles
-
-    if [[ "$(uname)" == "Darwin" ]]; then
-        export CC=/usr/bin/gcc
-    fi
-    #GLFW 3.0.2 declares cmake_minimum_required(2.8), which CMake 4 refuses without this
-    CFLAGS="${ARCHFLAGS}" cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_AR=$(which $AR) -DCMAKE_RANLIB=$(which $RANLIB) .
-	CFLAGS="${ARCHFLAGS}" make glfw
-	cd ../../
-	cp source/glfw/src/libglfw3.a $ODIR/libglfw3.a
-}
-
 build_angelscript() {
 	cd source/angelscript/projects/gnuc
 	make clean
@@ -89,15 +74,11 @@ for arg in $args; do
 			mkdir -p "$ODIR"
 		;;
 		libs)
-			build_glfw
 			build_angelscript
 			build_breakpad
 		;;
 		angelscript)
 			build_angelscript
-		;;
-		glfw)
-			build_glfw
 		;;
 		breakpad)
 			build_breakpad

@@ -1,4 +1,7 @@
 #include "os/glfw_driver.h"
+#ifdef __APPLE__
+#include "os/cocoa_window.h"
+#endif
 #include "compat/misc.h"
 #include "compat/gl.h"
 #include "main/game_platform.h"
@@ -40,10 +43,6 @@ void redirectMouseButton(GLFWwindow*,int button, int action, int mods);
 void redirectMouseMove(GLFWwindow*,double x, double y);
 void redirectMouseWheel(GLFWwindow*,double x, double y);
 #ifdef __APPLE__
-//Set by the patched GLFW Cocoa backend for each scroll event
-extern "C" int sr2PreciseScroll;
-//Called by the patched GLFW Cocoa backend for each trackpad pinch step
-extern "C" void (*sr2MagnifyCallback)(double magnification);
 void redirectMagnify(double magnification);
 #endif
 void trackMouseOver(GLFWwindow*,int over);
@@ -181,8 +180,11 @@ public:
 		glfwWindowHint(GLFW_REFRESH_RATE, data.refreshRate);
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+		//The game sizes its viewport and UI in window points, so keep the framebuffer at window size
+		glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_FALSE);
 
 		GLFWmonitor* monitor = nullptr;
+		bool borderless = false;
 		if(data.mode == WM_Fullscreen) {
 			monitor = glfwGetPrimaryMonitor();
 
@@ -231,6 +233,20 @@ public:
 					data.mode = WM_Window;
 				}
 			}
+
+#ifdef __APPLE__
+			//At the desktop mode there is nothing to switch, so cover the screen with a
+			//borderless window. GLFW would switch to its closest listed mode, which
+			//may not be the scaled desktop mode.
+			if(monitor) {
+				const GLFWvidmode* desktop = glfwGetVideoMode(monitor);
+				if(desktop && desktop->width == data.width && desktop->height == data.height) {
+					borderless = true;
+					glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
+					glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+				}
+			}
+#endif
 		}
 
 		if(data.mode != WM_Fullscreen && (data.width == 0 || data.height == 0)) {
@@ -241,7 +257,17 @@ public:
 			data.height = mode->height;
 		}
 
-		window = glfwCreateWindow(data.width, data.height, "Star Ruler 2", monitor, nullptr);
+		window = glfwCreateWindow(data.width, data.height, "Star Ruler 2", borderless ? nullptr : monitor, nullptr);
+		glfwDefaultWindowHints();
+#ifdef __APPLE__
+		if(window && borderless) {
+			int x = 0, y = 0;
+			glfwGetMonitorPos(monitor, &x, &y);
+			glfwSetWindowPos(window, x, y);
+			enterBorderlessFullscreen(window);
+			glfwShowWindow(window);
+		}
+#endif
 
 		if(window == 0)
 			window = glfwCreateWindow(1024,768, "Star Ruler 2 - Error Creating Window", nullptr, nullptr);
@@ -260,7 +286,7 @@ public:
 			GLint viewport[4] = {0, 0, 0, 0};
 			glGetIntegerv(GL_VIEWPORT, viewport);
 			print("Window %dx%d, framebuffer %dx%d, GL surface %dx%d, %s", win_width, win_height, fbWidth, fbHeight,
-				viewport[2], viewport[3], data.mode == WM_Fullscreen ? "fullscreen" : "windowed");
+				viewport[2], viewport[3], borderless ? "borderless fullscreen" : data.mode == WM_Fullscreen ? "fullscreen" : "windowed");
 		}
 		glfwSwapInterval( data.verticalSync );
 
@@ -274,7 +300,7 @@ public:
 		glfwSetMouseButtonCallback(window, redirectMouseButton);
 		glfwSetScrollCallback(window, redirectMouseWheel);
 #ifdef __APPLE__
-		sr2MagnifyCallback = redirectMagnify;
+		attachCocoaWindow(window, redirectMagnify);
 #endif
 		glfwSetCursorPosCallback(window, redirectMouseMove);
 		glfwSetCursorEnterCallback(window, trackMouseOver);
@@ -329,7 +355,7 @@ public:
 	}
 
 	void flashWindow() override {
-		glfwFlashWindow(window);
+		glfwRequestWindowAttention(window);
 	}
 	
 	bool isMouseOver() {
@@ -347,12 +373,23 @@ public:
 		 return std::string();
 	}
 
+	//Key codes for printable keys are their upper case US layout characters
 	int getCharForKey(int key) {
-		return glfwGetCharForKey(key);
+		if(key < 0 || key >= 256)
+			return -1;
+		if(key >= 'a' && key <= 'z')
+			key += 'A'-'a';
+		else if(key == '`')
+			key = '~';
+		return key;
 	}
 
 	int getKeyForChar(unsigned char chr) {
-		return glfwGetKeyForChar(chr);
+		if(chr >= 'a' && chr <= 'z')
+			chr += 'A'-'a';
+		else if(chr == '~')
+			chr = '`';
+		return chr;
 	}
 
 	unsigned getDoubleClickTime() const {
@@ -384,28 +421,31 @@ public:
 		glfwSetInputMode(window, GLFW_CURSOR, visible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_HIDDEN);
 	}
 
+	void applyCursorLock(bool locked) {
+#ifdef __APPLE__
+		//macOS can't confine the pointer to a window, and the pointer stays visible while
+		//the game holds it
+		if(locked)
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+#else
+		glfwSetInputMode(window, GLFW_CURSOR, locked ? GLFW_CURSOR_CAPTURED : GLFW_CURSOR_NORMAL);
+#endif
+	}
+
 	void setCursorLocked(bool locked) {
 		if(canLock == locked)
 			return;
 		canLock = locked;
-		if(shouldLock) {
-			if(locked)
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_CAPTURED);
-			else
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_FREE);
-		}
+		if(shouldLock)
+			applyCursorLock(locked);
 	}
 	
 	void setCursorShouldLock(bool locked) {
 		if(shouldLock == locked)
 			return;
 		shouldLock = locked;
-		if(canLock) {
-			if(locked)
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_CAPTURED);
-			else
-				glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_FREE);
-		}
+		if(canLock)
+			applyCursorLock(locked);
 	}
 
 	void sleep(int milliseconds) {
@@ -493,6 +533,9 @@ public:
 	}
 
 	void closeWindow() {
+#ifdef __APPLE__
+		detachCocoaWindow();
+#endif
 		glfwDestroyWindow(window);
 	}
 };
@@ -594,7 +637,7 @@ void redirectMagnify(double magnification) {
 
 void redirectMouseWheel(GLFWwindow*, double x, double y) {
 #ifdef __APPLE__
-	driver->preciseScroll = sr2PreciseScroll != 0;
+	driver->preciseScroll = lastScrollWasPrecise();
 #endif
 	driver->onScroll(x, y);
 }

@@ -114,7 +114,7 @@ ifneq ($(UNAME), Darwin)
 endif
 CXXFLAGS += -Werror=return-type
 CXXFLAGS += -I./source/game -I./source/angelscript/include
-CXXFLAGS += -I/usr/include/freetype2 -isystem./source/glfw/include
+CXXFLAGS += -I/usr/include/freetype2
 CXXFLAGS += -I./source/sound/include
 CXXFLAGS += -I./source/as_addons/include -I./source/os/include
 CXXFLAGS += -I./source/libircclient/include
@@ -138,7 +138,7 @@ else
 	#Homebrew lives in /opt/homebrew on arm64 and /usr/local on x86_64
 	BREW = $(shell brew --prefix)
 
-	#No blanket -I$(BREW)/include: it would shadow the patched GLFW headers in source/glfw
+	CXXFLAGS += -I$(BREW)/opt/glfw/include
 	CXXFLAGS += -I$(BREW)/opt/freetype/include
 	CXXFLAGS += -I$(BREW)/opt/freetype/include/freetype2
 	CXXFLAGS += -I$(BREW)/opt/libpng/include
@@ -148,17 +148,18 @@ else
 	LDFLAGS += -L$(BREW)/opt/freetype/lib
 	LDFLAGS += -L$(BREW)/opt/libpng/lib
 	LDFLAGS += -L$(BREW)/opt/glew/lib
+	LDFLAGS += -L$(BREW)/opt/glfw/lib
 endif
 
 	LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit
-	LDFLAGS += -framework CoreFoundation -framework OpenAL
+	LDFLAGS += -framework CoreFoundation -framework OpenAL -framework QuartzCore
 
 	LDFLAGS += -lcurl
 else
 	ifndef DEBUG
 		LDFLAGS += -Lsource/lib/lin$(ARCH)
 	endif
-	LDFLAGS += -lGL -lGLU -lX11 -lXrandr -lXxf86vm -lXi -lopenal -lcurl
+	LDFLAGS += -lglfw -lGL -lGLU -lX11 -lXrandr -lXxf86vm -lXi -lopenal -lcurl
 
 endif
 
@@ -169,10 +170,12 @@ LDFLAGS += -lvorbisfile
 ifdef USE_MACDEPS
 #Static vorbisfile needs its dependencies listed after it
 LDFLAGS += -lvorbis -logg
+LDFLAGS += -lglfw3
+else ifeq ($(UNAME), Darwin)
+LDFLAGS += -lglfw
 endif
 
 LIB_FILES += $(LIBDIR)/libangelscript.a
-LIB_FILES += $(LIBDIR)/libglfw3.a
 LIB_FILES += $(LIBDIR)/libsound.a
 LIB_FILES += $(LIBDIR)/libas_addons.a
 LIB_FILES += $(LIBDIR)/libircclient.a
@@ -357,6 +360,13 @@ CPP_FILES = $(addprefix $(SRCDIR)/, $(SOURCES))
 OBJ_FILES = $(addprefix $(OBJDIR)/, $(SOURCES:.cpp=.o))
 DEP_FILES = $(addprefix $(OBJDIR)/, $(SOURCES:.cpp=.d))
 
+ifeq ($(UNAME), Darwin)
+#Objective-C++ for the native window
+OBJC_SOURCES = os/cocoa_window.mm
+OBJ_FILES += $(addprefix $(OBJDIR)/, $(OBJC_SOURCES:.mm=.o))
+DEP_FILES += $(addprefix $(OBJDIR)/, $(OBJC_SOURCES:.mm=.d))
+endif
+
 -include $(DEP_FILES)
 
 compile: $(DEP_FILES) $(BINDIR)/$(BIN)
@@ -369,6 +379,15 @@ $(OBJDIR)/%.d: $(SRCDIR)/%.cpp
 
 #Object files are compiled separately
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
+	@mkdir -p $(dir $@)
+	@echo $<
+	@$(CC) $(CXXFLAGS) $< -c -o $@
+
+$(OBJDIR)/%.d: $(SRCDIR)/%.mm
+	@mkdir -p $(dir $@)
+	@$(CC) $(CXXFLAGS) -MM -MT "$(@:.d=.o)" $< >> $@
+
+$(OBJDIR)/%.o: $(SRCDIR)/%.mm
 	@mkdir -p $(dir $@)
 	@echo $<
 	@$(CC) $(CXXFLAGS) $< -c -o $@
@@ -415,9 +434,6 @@ version:
 $(LIBDIR)/libangelscript.a:
 	ODIR=$(LIBDIR) bash source/linux/build.sh $(ARCH) $(BUILDTYPE) angelscript
 
-$(LIBDIR)/libglfw3.a:
-	ODIR=$(LIBDIR) bash source/linux/build.sh $(ARCH) $(BUILDTYPE) glfw
-
 #$(LIBDIR)/libbreakpad_client.a:
 	#./source/linux/build.sh $(ARCH) $(BUILDTYPE) breakpad
 
@@ -445,10 +461,6 @@ clean_angelscript:
 angelscript: clean_angelscript
 	ODIR=$(LIBDIR) bash source/linux/build.sh $(ARCH) $(BUILDTYPE) angelscript
 
-clean_glfw:
-	rm -f $(LIBDIR)/libglfw3.a
-glfw:
-	ODIR=$(LIBDIR) bash source/linux/build.sh $(ARCH) $(BUILDTYPE) glfw
 
 #clean_breakpad:
 	#rm -f $(LIBDIR)/libbreakpad_client.a

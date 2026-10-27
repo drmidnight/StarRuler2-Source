@@ -65,6 +65,10 @@ mkdir -p "$PREFIX/include/GL"
 cp "$WORK/glew/include/GL/"*.h "$PREFIX/include/GL/"
 echo "built glew"
 
+fetch glfw https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip \
+	b5ec004b2712fd08e8861dc271428f048775200a2df719ccf575143ba749a3e9
+cmake_build glfw -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF
+
 #Only static archives may be found in the prefix, so the linker can never pick a dylib
 find "$PREFIX/lib" -name "*.dylib" -delete
 echo "Dependencies installed to $PREFIX (macOS $MACOSX_DEPLOYMENT_TARGET)"

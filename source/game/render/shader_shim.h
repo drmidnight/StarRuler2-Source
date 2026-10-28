@@ -31,4 +31,9 @@ enum ShaderAttribute {
 bool shimShader(const std::string& source, ShaderStage stage, ShimTarget target,
 	std::string& output, std::string& problems);
 
+//Shims both stages of a program. Unlike shimShader, this also handles fragment
+//inputs that the vertex shader never declares, which only GL can link.
+bool shimProgram(const std::string& vertex, const std::string& fragment, ShimTarget target,
+	std::string& vertexOutput, std::string& fragmentOutput, std::string& problems);
+
 };

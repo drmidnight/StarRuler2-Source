@@ -97,10 +97,12 @@ static const char* coreBuiltins[] = {
 	"gl_VertexID", "gl_InstanceID", "gl_FragDepth",
 };
 
-//Words that core GLSL reserves but GLSL 1.20 shaders could use as names
+//Names that core GLSL reserves, or that Metal has built-in functions for,
+//but that GLSL 1.20 shaders could define themselves
 static const char* coreKeywords[] = {
 	"sample", "smooth", "flat", "noperspective", "patch", "layout", "subroutine", "precise",
 	"uint", "uvec2", "uvec3", "uvec4", "dvec2", "dvec3", "dvec4",
+	"atan2", "saturate", "rsqrt", "fmod", "fmin", "fmax", "select", "lerp", "frac",
 };
 
 //Locations each gl_TexCoord array covers
@@ -116,6 +118,105 @@ static bool isIdentChar(char c) {
 
 static bool isNamed(const char* ident, size_t len, const char* name) {
 	return strlen(name) == len && strncmp(name, ident, len) == 0;
+}
+
+//Skips the comment starting at <i>, if there is one
+static bool skipComment(const std::string& source, size_t& i) {
+	if(source[i] != '/' || i + 1 >= source.size())
+		return false;
+	if(source[i+1] == '/') {
+		i = source.find('\n', i);
+		if(i == std::string::npos)
+			i = source.size();
+		return true;
+	}
+	if(source[i+1] == '*') {
+		i = source.find("*/", i + 2);
+		i = i == std::string::npos ? source.size() : i + 2;
+		return true;
+	}
+	return false;
+}
+
+//A varying declaration: its qualifiers and type, then each declarator ("name[2]")
+struct VaryingDeclaration {
+	std::string type;
+	std::vector<std::string> names, declarators;
+	//Position of the closing semicolon
+	size_t end;
+};
+
+//Parses the varying declaration that continues from <i>
+static void parseVarying(const std::string& source, size_t i, VaryingDeclaration& decl) {
+	const size_t len = source.size();
+	size_t typeStart = i, declStart = std::string::npos;
+	int depth = 0;
+	std::string name;
+	while(i < len && source[i] != ';') {
+		if(skipComment(source, i))
+			continue;
+		char c = source[i];
+		if(c == '[')
+			++depth;
+		else if(c == ']')
+			--depth;
+		else if(c == ',' && depth == 0 && declStart != std::string::npos) {
+			decl.names.push_back(name);
+			decl.declarators.push_back(source.substr(declStart, i - declStart));
+			declStart = i + 1;
+			name.clear();
+		}
+		if(isIdentStart(c)) {
+			size_t end = i + 1;
+			while(end < len && isIdentChar(source[end]))
+				++end;
+			std::string ident = source.substr(i, end - i);
+			bool qualifier = ident == "lowp" || ident == "mediump" || ident == "highp"
+				|| ident == "centroid" || ident == "invariant";
+			if(depth == 0 && !qualifier) {
+				if(declStart == std::string::npos) {
+					decl.type = source.substr(typeStart, end - typeStart);
+					declStart = end;
+				}
+				else if(name.empty()) {
+					name = ident;
+				}
+			}
+			i = end;
+			continue;
+		}
+		++i;
+	}
+	if(declStart != std::string::npos && !name.empty()) {
+		decl.names.push_back(name);
+		decl.declarators.push_back(source.substr(declStart, i - declStart));
+	}
+	decl.end = i;
+}
+
+//Every name a shader declares as varying
+static std::set<std::string> declaredVaryings(const std::string& source) {
+	std::set<std::string> names;
+	const size_t len = source.size();
+	size_t i = 0;
+	while(i < len) {
+		if(skipComment(source, i))
+			continue;
+		if(isIdentStart(source[i])) {
+			size_t end = i + 1;
+			while(end < len && isIdentChar(source[end]))
+				++end;
+			if(source.compare(i, end - i, "varying") == 0) {
+				VaryingDeclaration decl;
+				parseVarying(source, end, decl);
+				names.insert(decl.names.begin(), decl.names.end());
+			}
+			i = end;
+			continue;
+		}
+		++i;
+	}
+	return names;
 }
 
 static void declare(std::string& out, unsigned used, ShaderStage stage, ShimTarget target) {
@@ -199,8 +300,9 @@ static const char* alphaTestMain =
 	"\t\tdiscard;\n"
 	"}\n";
 
-bool shimShader(const std::string& source, ShaderStage stage, ShimTarget target,
-	std::string& output, std::string& problems)
+//<vertexVaryings> are the vertex shader's varyings when shimming a program's fragment shader
+static bool shimStage(const std::string& source, ShaderStage stage, ShimTarget target,
+	const std::set<std::string>* vertexVaryings, std::string& output, std::string& problems)
 {
 	const unsigned stageFlag = stage == SS_Vertex ? MF_Vertex : MF_Fragment;
 	const unsigned targetFlag = target == ST_GLSL120 ? MF_Legacy : MF_Core;
@@ -277,6 +379,31 @@ bool shimShader(const std::string& source, ShaderStage stage, ShimTarget target,
 					if(isNamed(ident, identLen, name))
 						keyword = true;
 
+			//GL leaves fragment inputs that the vertex shader never declares undefined,
+			//but other APIs can't link them, so they become plain globals
+			if(mapped && vertexVaryings && isNamed(ident, identLen, "varying")) {
+				VaryingDeclaration decl;
+				parseVarying(source, end, decl);
+				std::string inputs, locals;
+				for(size_t d = 0; d < decl.names.size(); ++d) {
+					std::string& list = vertexVaryings->count(decl.names[d]) ? inputs : locals;
+					if(!list.empty())
+						list += ",";
+					list += decl.declarators[d];
+				}
+				if(!locals.empty() && decl.end < len) {
+					if(!inputs.empty())
+						body += mapped->to + std::string(" ") + decl.type + inputs + "; ";
+					body += decl.type + locals + ";";
+					//Keeps the line numbering of declarations spread over several lines
+					for(size_t n = end; n < decl.end; ++n)
+						if(source[n] == '\n')
+							body += '\n';
+					i = decl.end + 1;
+					continue;
+				}
+			}
+
 			if(mapped) {
 				body += mapped->to;
 				used |= mapped->decl;
@@ -339,6 +466,26 @@ bool shimShader(const std::string& source, ShaderStage stage, ShimTarget target,
 		problems += name;
 	}
 	return unsupported.empty();
+}
+
+bool shimShader(const std::string& source, ShaderStage stage, ShimTarget target,
+	std::string& output, std::string& problems)
+{
+	return shimStage(source, stage, target, nullptr, output, problems);
+}
+
+bool shimProgram(const std::string& vertex, const std::string& fragment, ShimTarget target,
+	std::string& vertexOutput, std::string& fragmentOutput, std::string& problems)
+{
+	std::string vertexProblems, fragmentProblems;
+	auto varyings = declaredVaryings(vertex);
+	bool ok = shimStage(vertex, SS_Vertex, target, nullptr, vertexOutput, vertexProblems);
+	ok = shimStage(fragment, SS_Fragment, target, &varyings, fragmentOutput, fragmentProblems) && ok;
+	problems = vertexProblems;
+	if(!problems.empty() && !fragmentProblems.empty())
+		problems += ", ";
+	problems += fragmentProblems;
+	return ok;
 }
 
 };

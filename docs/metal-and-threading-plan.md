@@ -1,8 +1,7 @@
 # Metal Backend and Threading Overhaul Plan
 
-Status: 2026-10-28. M0 to M4 are merged to `master` (M3 partly: M3.1, M3.2, M3.4, M3.5 phase 1 and
-M3.7 are done; the M4 window-mode test matrix is partly run). M5 is in progress on `m5-renderer`:
-M5 is done; M6 is next. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
+Status: 2026-10-28. M0 to M5 are merged to `master` (M3 partly: M3.1, M3.2, M3.4, M3.5 phase 1 and
+M3.7 are done; the M4 window-mode test matrix is partly run). M6 is next. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
 Measurements are in [benchmark.md](benchmark.md).
 
 This plan moves the Apple Silicon fork from OpenGL 2.1 to a native Metal renderer and replaces the

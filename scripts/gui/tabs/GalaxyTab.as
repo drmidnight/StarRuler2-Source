@@ -937,6 +937,15 @@ void zoomTabTo(Tab@ _tab, vec3d pos) {
 	tab.zoomTo(pos);
 }
 
+//Zooms a galaxy tab's camera at once, for scripted views such as visual captures
+void zoomTabBy(Tab@ _tab, double factor) {
+	GalaxyTab@ tab = cast<GalaxyTab>(_tab);
+	if(tab is null)
+		return;
+	tab.cam.camera.zoom(factor);
+	tab.cam.camera.snap();
+}
+
 void openSupportOverlay(Object@ obj) {
 	GalaxyTab@ tab = cast<GalaxyTab>(ActiveTab);
 	if(tab is null)

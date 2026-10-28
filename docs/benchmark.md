@@ -86,6 +86,24 @@ of exiting.
 - **Startup:** time from launch to the main menu. The log prints the script load and compile
   times, for example `Server scripts: 57ms load, 682ms compile`.
 
+## Visual parity
+
+Renders fixed views to PNGs, so a renderer change can be compared with an earlier build. Turn off
+any window tiler first: it resizes the window during loading. Don't touch the window during a run.
+
+    ./bin/osx64/StarRuler2.bin --capture <folder> --no-sound                    # main menu
+    ./bin/osx64/StarRuler2.bin --capture <folder> --load benchmark --no-sound   # save views
+
+Each run quits by itself after writing `menu.png`, or `galaxy`, `system`, `planet`, `fleet`,
+`design` and `planets`. For a reference, build the earlier commit with the capture commits applied,
+run the same two commands from its folder, then compare:
+
+    python3 -I source/tools/capturediff.py <reference> <new> --out <diff folder>
+
+It reports, per view, the mean channel difference and the share of pixels that changed by more than
+16 levels, and writes an amplified difference image for each view over 1% (`--tolerance`). Runs of
+the same build differ by up to about 2% on `galaxy`, `system`, `fleet` and `planet`.
+
 ## Results
 
 ### Headless smoke test (`--test-scripts --no-window --no-sound`)

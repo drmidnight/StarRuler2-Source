@@ -1,8 +1,8 @@
 # Metal Backend and Threading Overhaul Plan
 
-Status: 2026-10-27. M0 to M4 are merged to `master` (M3 partly: M3.1, M3.2, M3.4, M3.5 phase 1 and
+Status: 2026-10-28. M0 to M4 are merged to `master` (M3 partly: M3.1, M3.2, M3.4, M3.5 phase 1 and
 M3.7 are done; the M4 window-mode test matrix is partly run). M5 is in progress on `m5-renderer`:
-M5.1 to M5.5 are done; M5.6 is next. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
+M5 is done; M6 is next. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
 Measurements are in [benchmark.md](benchmark.md).
 
 This plan moves the Apple Silicon fork from OpenGL 2.1 to a native Metal renderer and replaces the
@@ -712,6 +712,30 @@ The original plan follows.
   - flush the batch before `glScissor` changes (`gl_driver.cpp:1344-1360`).
 
 ### M5.6 Visual parity harness
+Done. `--capture <folder>` (`main/capture.cpp`) writes PNGs and quits: the main menu without
+`--load`, and with it, `scripts/client/capture.as` steps through `galaxy`, `system`, `planet`
+(overlay), `fleet`, `design` and `planets` on the loaded save. Capture mode keeps the game paused,
+ignores the real mouse, waits for streaming resources and 90 settle frames per view, and reads each
+frame back before it is presented. `source/tools/capturediff.py` compares two folders. How to run
+it is in [benchmark.md](benchmark.md#visual-parity).
+
+Result against the pre-M5 build (`master` plus the harness, GL 2.1), at 3600x2196 on
+`benchmark.sr2`: `menu`, `design` and `planets` are identical, and `system`, `fleet`, `planet` and
+`galaxy` differ by 0.8-1.8% of pixels, all from things that change between runs of the same build
+(the galaxy nebula, real-time animation, the quick bar and the blinking diplomacy tab). The first run
+found one real regression: the scissor flush added in M5.5 drew clipped script geometry before its
+vertices were written, which lost the planet surface terrain and the planets-screen lines. It was
+reverted.
+
+Notes for M6:
+- The reference images are not in the repository (about 25 MB); regenerate them from `master` with
+  the harness commits applied.
+- A window tiler resizes the window during loading and makes captures inconsistent; disable it.
+- The remaining noise sets the useful tolerance at about 2%. Fixing the nebula's randomness and
+  hiding the quick bar in capture mode would lower it.
+
+The original plan follows.
+
 - Add a `--capture <scenario>` launch option that:
   1. loads a fixed save;
   2. sets a fixed camera list, time and effects seed;
@@ -727,7 +751,7 @@ The original plan follows.
 - Compare against the M0 GL 2.1 captures with a perceptual diff tolerance. Commit the reference images
   under `docs/parity/` (or keep them out of the repo if they're large).
 
-**Exit:** the game runs on a GL 4.1 core context with every built-in shader through the shim.
+**Exit (met):** the game runs on a GL 4.1 core context with every built-in shader through the shim.
 `shadertool` translates all built-in shaders to MSL. Parity captures match within tolerance. No
 regression on the benchmark.
 

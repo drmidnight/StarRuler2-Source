@@ -1,6 +1,7 @@
 #include "vertexBuffer.h"
 #include "render/driver.h"
 #include "main/references.h"
+#include "render/shader_shim.h"
 #include "compat/gl.h"
 #include <deque>
 
@@ -9,6 +10,7 @@ namespace render {
 	extern const RenderMesh* lastRenderedMesh;
 	extern float* shaderUniforms;
 	extern bool useVertexArrays();
+	void glPrepareDraw();
 
 	//Batches stream through a ring of buffers so a new upload never waits on a draw in flight
 	static std::deque<GLuint> vertBuffer, indBuffer;
@@ -40,14 +42,19 @@ namespace render {
 			vertBuffer.push_back(vertBuffer.front());
 			vertBuffer.pop_front();
 
-			if(!useVertexArrays()) {
-				glDisableVertexAttribArray(0);
-				glDisableVertexAttribArray(1);
-				glDisableVertexAttribArray(2);
-				glDisableVertexAttribArray(3);
-				glDisableVertexAttribArray(4);
-				glDisableVertexAttribArray(5);
-			}
+			//Shaders read the generic attributes, and drawing without one reads the
+			//fixed-function arrays, so both point at the same data
+			glDisableVertexAttribArray(SA_Normal);
+			glDisableVertexAttribArray(SA_Tangent);
+			glDisableVertexAttribArray(SA_UV2);
+			glVertexAttrib4f(SA_Normal, 0.f, 0.f, 1.f, 0.f);
+
+			glEnableVertexAttribArray(SA_Vertex);
+			glEnableVertexAttribArray(SA_UV);
+			glEnableVertexAttribArray(SA_Color);
+			glVertexAttribPointer(SA_Vertex, 3, GL_FLOAT, GL_FALSE, sizeof(VertexTCV), (void*)offsetof(VertexTCV, pos));
+			glVertexAttribPointer(SA_UV, 2, GL_FLOAT, GL_FALSE, sizeof(VertexTCV), (void*)offsetof(VertexTCV, uv));
+			glVertexAttribPointer(SA_Color, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(VertexTCV), (void*)offsetof(VertexTCV, col));
 
 			glEnableClientState(GL_VERTEX_ARRAY);
 			glEnableClientState(GL_COLOR_ARRAY);
@@ -67,6 +74,7 @@ namespace render {
 			auto& step = steps[i];
 			shaderUniforms = step.shaderCache;
 			devices.render->switchToRenderState(*step.material);
+			glPrepareDraw();
 			unsigned count = ((i+1) < stepCount ? steps[i+1].indexOffset : indexCount) - step.indexOffset;
 
 			glDrawRangeElements(step.lines ? GL_LINES : GL_TRIANGLES, step.vertStart, step.vertEnd,

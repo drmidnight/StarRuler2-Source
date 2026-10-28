@@ -5,6 +5,7 @@
 #include "render/render_mesh.h"
 #include "render/gl_mesh.h"
 #include "render/driver.h"
+#include "render/shader_shim.h"
 #include "main/references.h"
 
 #include <assert.h>
@@ -23,6 +24,7 @@ bool useVertexArrays() {
 }
 
 const RenderMesh* lastRenderedMesh = 0;
+void glPrepareDraw();
 
 class GLMesh : public RenderMesh {
 	bool valid;
@@ -222,7 +224,13 @@ public:
 				glBindVertexArray(vertex_array);
 			else
 				setupBuffers();
+
+			//Shaders reading vertex colours get white from meshes that have none
+			if(!color_buffer)
+				glVertexAttrib4f(SA_Color, 1.f, 1.f, 1.f, 1.f);
 		}
+
+		glPrepareDraw();
 
 		glDrawElements(
 			GL_TRIANGLES, //Mode

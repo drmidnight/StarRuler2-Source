@@ -292,7 +292,7 @@ public:
 
 		glDisable(GL_NORMALIZE);
 		
-		glUseProgram(0);
+		glUnbindProgram();
 
 		for(int i = 0; i < RENDER_MAX_TEXTURES; ++i) {
 			glActiveTexture(GL_TEXTURE0 + i);
@@ -645,7 +645,7 @@ public:
 
 		//Shader and shader variables
 		if(state.shader == 0 && activeRenderState.shader != 0)
-			glUseProgram(0);
+			glUnbindProgram();
 
 		activeRenderState = state;
 		pLastRenderState = &state;
@@ -1446,6 +1446,10 @@ public:
 
 RenderDriver* createGLDriver() {
 	return new GLDriver();
+}
+
+void glPrepareDraw() {
+	glUploadBuiltins(((GLDriver*)devices.render)->builtins);
 }
 
 };

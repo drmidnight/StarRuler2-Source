@@ -1,5 +1,7 @@
 #include "render/shader.h"
 #include "render/gl_shader.h"
+#include "render/shader_shim.h"
+#include "render/shader_builtins.h"
 #include "compat/gl.h"
 #include "compat/misc.h"
 #include "str_util.h"
@@ -107,7 +109,52 @@ void preProcessShader(std::string& shader) {
 	shader = output;
 }
 
+//Inverse of a column-major 4x4 matrix, or false if it has none
+static bool invertMatrix(const double* m, double* inv) {
+	inv[0] = m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10];
+	inv[4] = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10];
+	inv[8] = m[4]*m[9]*m[15] - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9];
+	inv[12] = -m[4]*m[9]*m[14] + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9];
+	inv[1] = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10];
+	inv[5] = m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10];
+	inv[9] = -m[0]*m[9]*m[15] + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9];
+	inv[13] = m[0]*m[9]*m[14] - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9];
+	inv[2] = m[1]*m[6]*m[15] - m[1]*m[7]*m[14] - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[7] - m[13]*m[3]*m[6];
+	inv[6] = -m[0]*m[6]*m[15] + m[0]*m[7]*m[14] + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[7] + m[12]*m[3]*m[6];
+	inv[10] = m[0]*m[5]*m[15] - m[0]*m[7]*m[13] - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[7] - m[12]*m[3]*m[5];
+	inv[14] = -m[0]*m[5]*m[14] + m[0]*m[6]*m[13] + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[6] + m[12]*m[2]*m[5];
+	inv[3] = -m[1]*m[6]*m[11] + m[1]*m[7]*m[10] + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[9]*m[2]*m[7] + m[9]*m[3]*m[6];
+	inv[7] = m[0]*m[6]*m[11] - m[0]*m[7]*m[10] - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[8]*m[2]*m[7] - m[8]*m[3]*m[6];
+	inv[11] = -m[0]*m[5]*m[11] + m[0]*m[7]*m[9] + m[4]*m[1]*m[11] - m[4]*m[3]*m[9] - m[8]*m[1]*m[7] + m[8]*m[3]*m[5];
+	inv[15] = m[0]*m[5]*m[10] - m[0]*m[6]*m[9] - m[4]*m[1]*m[10] + m[4]*m[2]*m[9] + m[8]*m[1]*m[6] - m[8]*m[2]*m[5];
+
+	double det = m[0]*inv[0] + m[1]*inv[4] + m[2]*inv[8] + m[3]*inv[12];
+	if(det == 0)
+		return false;
+	det = 1.0 / det;
+	for(unsigned i = 0; i < 16; ++i)
+		inv[i] *= det;
+	return true;
+}
+
+static void uniformMatrix(GLint location, const double* m) {
+	float f[16];
+	for(unsigned i = 0; i < 16; ++i)
+		f[i] = (float)m[i];
+	glUniformMatrix4fv(location, 1, GL_FALSE, f);
+}
+
+static void uniformColor(GLint location, const Colorf& color) {
+	glUniform4fv(location, 1, &color.r);
+}
+
 class GLShader;
+class GLShaderProgram;
+
+//The program GL is using, so binding the same one again is skipped
+static GLShaderProgram* boundProgram = nullptr;
+static GLuint boundProgramID = 0;
+
 class GLShaderProgram : public ShaderProgram {
 public:
 	GLuint vertex_shader, fragment_shader, program;
@@ -118,8 +165,21 @@ public:
 
 	const GLShader* lastShader;
 
+	//Locations of the sr_* uniforms the shim declared, -1 for ones the program doesn't use
+	struct LightLocations {
+		GLint ambient, diffuse, specular, position;
+		GLint constantAttenuation, linearAttenuation, quadraticAttenuation;
+	};
+	GLint modelView, projection, modelViewProjection, normalMatrix, projectionInverse;
+	LightLocations lights[MAX_LIGHTS];
+	GLint materialEmission, materialAmbient, materialDiffuse, materialSpecular, materialShininess;
+	GLint lightModelAmbient;
+	bool usesMatrices, usesLights, usesMaterial;
+	unsigned matrixSerial, lightSerial, materialSerial;
+
 	GLShaderProgram(const std::string& vFile, const std::string& fFile)
-		: vertex_file(vFile), fragment_file(fFile), program(0), lastShader(0)
+		: vertex_file(vFile), fragment_file(fFile), program(0), lastShader(0),
+		usesMatrices(false), usesLights(false), usesMaterial(false)
 	{
 	}
 
@@ -128,6 +188,11 @@ public:
 	}
 
 	void reset() {
+		if(boundProgram == this) {
+			boundProgram = nullptr;
+			boundProgramID = 0;
+			glUseProgram(0);
+		}
 		if(program != 0) {
 			glDeleteProgram(program);
 			program = 0;
@@ -135,6 +200,127 @@ public:
 
 		mem_buffer.clear();
 		cached_uniforms.clear();
+		usesMatrices = usesLights = usesMaterial = false;
+	}
+
+	void findBuiltins() {
+		auto find = [this](const std::string& name) -> GLint {
+			return glGetUniformLocation(program, name.c_str());
+		};
+		modelView = find("sr_ModelView");
+		projection = find("sr_Projection");
+		modelViewProjection = find("sr_ModelViewProjection");
+		normalMatrix = find("sr_NormalMatrix");
+		projectionInverse = find("sr_ProjectionInverse");
+		usesMatrices = modelView >= 0 || projection >= 0 || modelViewProjection >= 0
+			|| normalMatrix >= 0 || projectionInverse >= 0;
+
+		usesLights = false;
+		for(unsigned i = 0; i < MAX_LIGHTS; ++i) {
+			std::string prefix = "sr_LightSource[" + std::to_string(i) + "].";
+			auto& light = lights[i];
+			light.ambient = find(prefix + "ambient");
+			light.diffuse = find(prefix + "diffuse");
+			light.specular = find(prefix + "specular");
+			light.position = find(prefix + "position");
+			light.constantAttenuation = find(prefix + "constantAttenuation");
+			light.linearAttenuation = find(prefix + "linearAttenuation");
+			light.quadraticAttenuation = find(prefix + "quadraticAttenuation");
+			for(GLint* loc = &light.ambient; loc <= &light.quadraticAttenuation; ++loc)
+				if(*loc >= 0)
+					usesLights = true;
+		}
+		lightModelAmbient = find("sr_LightModel.ambient");
+		if(lightModelAmbient >= 0)
+			usesLights = true;
+
+		materialEmission = find("sr_FrontMaterial.emission");
+		materialAmbient = find("sr_FrontMaterial.ambient");
+		materialDiffuse = find("sr_FrontMaterial.diffuse");
+		materialSpecular = find("sr_FrontMaterial.specular");
+		materialShininess = find("sr_FrontMaterial.shininess");
+		usesMaterial = materialEmission >= 0 || materialAmbient >= 0 || materialDiffuse >= 0
+			|| materialSpecular >= 0 || materialShininess >= 0;
+
+		matrixSerial = lightSerial = materialSerial = 0;
+	}
+
+	//Sends the built-in state this program reads, if it changed since the last upload
+	void uploadBuiltins(const BuiltinState& state) {
+		if(usesMatrices && matrixSerial != state.matrixSerial) {
+			matrixSerial = state.matrixSerial;
+			const double* mv = state.modelView.m;
+			if(modelView >= 0)
+				uniformMatrix(modelView, mv);
+			if(projection >= 0)
+				uniformMatrix(projection, state.projection.m);
+			if(modelViewProjection >= 0)
+				uniformMatrix(modelViewProjection, (state.projection * state.modelView).m);
+			if(normalMatrix >= 0) {
+				//Inverse transpose of the upper 3x3, which is its cofactor matrix over the determinant
+				double c[9];
+				c[0] = mv[5]*mv[10] - mv[9]*mv[6];
+				c[1] = mv[8]*mv[6] - mv[4]*mv[10];
+				c[2] = mv[4]*mv[9] - mv[8]*mv[5];
+				c[3] = mv[9]*mv[2] - mv[1]*mv[10];
+				c[4] = mv[0]*mv[10] - mv[8]*mv[2];
+				c[5] = mv[8]*mv[1] - mv[0]*mv[9];
+				c[6] = mv[1]*mv[6] - mv[5]*mv[2];
+				c[7] = mv[4]*mv[2] - mv[0]*mv[6];
+				c[8] = mv[0]*mv[5] - mv[4]*mv[1];
+				double det = mv[0]*c[0] + mv[4]*c[3] + mv[8]*c[6];
+				double scale = det != 0 ? 1.0 / det : 0.0;
+				//c is column-major, like the uniform
+				float n[9];
+				for(unsigned i = 0; i < 9; ++i)
+					n[i] = (float)(c[i] * scale);
+				glUniformMatrix3fv(normalMatrix, 1, GL_FALSE, n);
+			}
+			if(projectionInverse >= 0) {
+				double inv[16];
+				if(invertMatrix(state.projection.m, inv))
+					uniformMatrix(projectionInverse, inv);
+			}
+		}
+
+		if(usesLights && lightSerial != state.lightSerial) {
+			lightSerial = state.lightSerial;
+			const Colorf noAmbient(0.f, 0.f, 0.f, 1.f);
+			for(unsigned i = 0; i < MAX_LIGHTS; ++i) {
+				auto& loc = lights[i];
+				auto& light = state.lights[i];
+				if(loc.ambient >= 0)
+					uniformColor(loc.ambient, noAmbient);
+				if(loc.diffuse >= 0)
+					uniformColor(loc.diffuse, light.diffuse);
+				if(loc.specular >= 0)
+					uniformColor(loc.specular, light.specular);
+				if(loc.position >= 0)
+					glUniform4fv(loc.position, 1, &light.position.x);
+				if(loc.constantAttenuation >= 0)
+					glUniform1f(loc.constantAttenuation, light.constantAttenuation);
+				if(loc.linearAttenuation >= 0)
+					glUniform1f(loc.linearAttenuation, light.linearAttenuation);
+				if(loc.quadraticAttenuation >= 0)
+					glUniform1f(loc.quadraticAttenuation, light.quadraticAttenuation);
+			}
+			if(lightModelAmbient >= 0)
+				uniformColor(lightModelAmbient, state.lightModelAmbient);
+		}
+
+		if(usesMaterial && materialSerial != state.materialSerial) {
+			materialSerial = state.materialSerial;
+			if(materialEmission >= 0)
+				uniformColor(materialEmission, Colorf(0.f, 0.f, 0.f, 1.f));
+			if(materialAmbient >= 0)
+				uniformColor(materialAmbient, state.materialAmbient);
+			if(materialDiffuse >= 0)
+				uniformColor(materialDiffuse, state.materialDiffuse);
+			if(materialSpecular >= 0)
+				uniformColor(materialSpecular, state.materialSpecular);
+			if(materialShininess >= 0)
+				glUniform1f(materialShininess, state.materialShininess);
+		}
 	}
 
 	unsigned cacheUniform(GLuint position, size_t size) {
@@ -148,6 +334,21 @@ public:
 		for(size_t i = 0; i < size; ++i)
 			mem_buffer.push_back(0);
 		return pos;
+	}
+
+	//Compiles the shimmed shader, falling back to the original if the shim's output fails
+	GLuint compileShimmed(GLenum type, const std::string& fname, const std::string& source) {
+		std::string shimmed, problems;
+		ShaderStage stage = type == GL_VERTEX_SHADER ? SS_Vertex : SS_Fragment;
+		if(!shimShader(source, stage, ST_GLSL120, shimmed, problems))
+			warn("Shader %s reads %s, which comes from fixed-function state", fname.c_str(), problems.c_str());
+
+		GLuint shader = compileShader(type, fname, shimmed);
+		if(!shader) {
+			error("Compiling %s without the shader shim", fname.c_str());
+			shader = compileShader(type, fname, source);
+		}
+		return shader;
 	}
 
 	GLuint compileShader(GLenum type, const std::string& fname, const std::string& source) {
@@ -212,7 +413,7 @@ public:
 				return 1;
 			}
 
-			vertex_shader = compileShader(GL_VERTEX_SHADER, vertex_file, contents);
+			vertex_shader = compileShimmed(GL_VERTEX_SHADER, vertex_file, contents);
 			if(!vertex_shader)
 				return 1;
 		}
@@ -221,7 +422,7 @@ public:
 		{
 			auto contents = getFileContents(fragment_file);
 			preProcessShader(contents);
-			fragment_shader = compileShader(GL_FRAGMENT_SHADER, fragment_file, contents);
+			fragment_shader = compileShimmed(GL_FRAGMENT_SHADER, fragment_file, contents);
 			if(!fragment_shader) {
 				if(contents.empty())
 					error("Could not open fragment shader, or the file was empty");
@@ -233,12 +434,18 @@ public:
 		//Link entire program
 		program = glCreateProgram();
 		
-		glBindAttribLocation(program, 0, "in_vertex");
-		glBindAttribLocation(program, 2, "in_normal");
-		glBindAttribLocation(program, 1, "in_uv");
-		glBindAttribLocation(program, 3, "in_tangent");
-		glBindAttribLocation(program, 4, "in_color");
-		glBindAttribLocation(program, 5, "in_uv2");
+		//Shaders name the same inputs in different ways; a program only uses one of each
+		glBindAttribLocation(program, SA_Vertex, "in_vertex");
+		glBindAttribLocation(program, SA_Vertex, "in_position");
+		glBindAttribLocation(program, SA_Vertex, "sr_Vertex");
+		glBindAttribLocation(program, SA_UV, "in_uv");
+		glBindAttribLocation(program, SA_UV, "sr_MultiTexCoord0");
+		glBindAttribLocation(program, SA_Normal, "in_normal");
+		glBindAttribLocation(program, SA_Normal, "sr_Normal");
+		glBindAttribLocation(program, SA_Tangent, "in_tangent");
+		glBindAttribLocation(program, SA_Color, "in_color");
+		glBindAttribLocation(program, SA_Color, "sr_Color");
+		glBindAttribLocation(program, SA_UV2, "in_uv2");
 
 		glAttachShader(program, vertex_shader);
 		glAttachShader(program, fragment_shader);
@@ -268,6 +475,7 @@ public:
 			return 3;
 		}
 
+		findBuiltins();
 		return 0;
 	}
 };
@@ -356,16 +564,20 @@ public:
 
 	virtual void bind(float* dynamic) const {
 		if(!program) {
-			glUseProgram(0);
+			glUnbindProgram();
 			return;
 		}
 
 		auto glProgram = (GLShaderProgram*)program;
 		if(auto programID = glProgram->program) {
-			glUseProgram(programID);
+			if(boundProgramID != programID) {
+				glUseProgram(programID);
+				boundProgramID = programID;
+			}
+			boundProgram = glProgram;
 		}
 		else {
-			glUseProgram(0);
+			glUnbindProgram();
 			return;
 		}
 
@@ -913,6 +1125,19 @@ public:
 		}
 	}
 };
+
+void glUnbindProgram() {
+	if(boundProgramID != 0) {
+		glUseProgram(0);
+		boundProgramID = 0;
+	}
+	boundProgram = nullptr;
+}
+
+void glUploadBuiltins(const BuiltinState& state) {
+	if(boundProgram)
+		boundProgram->uploadBuiltins(state);
+}
 
 Shader* createGLShader() {
 	return new GLShader();

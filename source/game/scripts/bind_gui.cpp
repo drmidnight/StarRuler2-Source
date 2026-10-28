@@ -601,6 +601,13 @@ void RegisterGuiBinds() {
 	bind("bool get_preciseScrolling()", asFUNCTION(getPreciseScrolling))
 		doc("Whether the last scroll event came from a trackpad or other device with precise, fractional deltas.", "");
 
+	{
+		EnumBind gestures("GestureType");
+		gestures["GT_Pinch"] = os::GT_Pinch;
+		gestures["GT_Rotate"] = os::GT_Rotate;
+		gestures["GT_Pan"] = os::GT_Pan;
+	}
+
 	bind("void set_mouseLock(bool lock)", asFUNCTION(setMouseLock))
 		doc("Sets whether the cursor should be locked to the screen, if the user has enabled the feature.", "");
 

@@ -143,12 +143,25 @@ void onMouseWheel(double x, double y) {
 	activeCamera.zoom(y);
 }
 
-//Called for each step of a trackpad pinch gesture.
-// amount: Change in scale, positive when spreading fingers apart.
-void onMagnify(double amount) {
+//Called for each step of a trackpad (and later touch) gesture.
+// type: The GestureType.
+// x, y: Pinch: change in scale, positive when spreading fingers apart.
+//       Rotate: degrees turned, positive counter-clockwise.
+//       Pan: movement in points, positive right and down.
+void onGesture(int type, double x, double y) {
 	if(isGuiHovered() || ActiveCamera is null)
 		return;
-	activeCamera.pinch(amount);
+	switch(type) {
+		case GT_Pinch:
+			activeCamera.pinch(x);
+		break;
+		case GT_Rotate:
+			activeCamera.twist(x);
+		break;
+		case GT_Pan:
+			activeCamera.pan(int(x), int(y));
+		break;
+	}
 }
 
 //Called when the mouse is dragged with one or more buttons

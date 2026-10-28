@@ -1,4 +1,5 @@
 #include "os/cocoa_window.h"
+#include "os/driver.h"
 #define GLFW_EXPOSE_NATIVE_COCOA
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
@@ -8,7 +9,7 @@
 namespace os {
 
 static NSWindow* nativeWindow = nil;
-static id scrollMonitor = nil, magnifyMonitor = nil;
+static id scrollMonitor = nil, gestureMonitor = nil;
 static id becomeKeyObserver = nil, resignKeyObserver = nil, moveObserver = nil;
 //Whether the window covers its screen, above the menu bar
 static bool coveringScreen = false;
@@ -18,7 +19,7 @@ void* getNativeWindow(GLFWwindow* window) {
 	return (void*)glfwGetCocoaWindow(window);
 }
 
-void attachCocoaWindow(GLFWwindow* window, void (*onMagnify)(double magnification)) {
+void attachCocoaWindow(GLFWwindow* window, void (*onGesture)(int type, double x, double y)) {
 	nativeWindow = glfwGetCocoaWindow(window);
 
 	//Local monitors see each event before GLFW dispatches it to the window
@@ -29,10 +30,14 @@ void attachCocoaWindow(GLFWwindow* window, void (*onMagnify)(double magnificatio
 			return event;
 		}];
 
-	magnifyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskMagnify
+	gestureMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskMagnify | NSEventMaskRotate
 		handler:^NSEvent*(NSEvent* event) {
-			if([event window] == nativeWindow && onMagnify)
-				onMagnify([event magnification]);
+			if([event window] != nativeWindow || !onGesture)
+				return event;
+			if([event type] == NSEventTypeMagnify)
+				onGesture(GT_Pinch, [event magnification], 0.0);
+			else if([event type] == NSEventTypeRotate)
+				onGesture(GT_Rotate, [event rotation], 0.0);
 			return event;
 		}];
 }
@@ -53,7 +58,7 @@ static void removeMonitor(id& monitor) {
 
 void detachCocoaWindow() {
 	removeMonitor(scrollMonitor);
-	removeMonitor(magnifyMonitor);
+	removeMonitor(gestureMonitor);
 	removeObserver(becomeKeyObserver);
 	removeObserver(resignKeyObserver);
 	removeObserver(moveObserver);

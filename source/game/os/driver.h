@@ -41,6 +41,21 @@ struct GamepadState {
 	float axes[GP_AxisCount];
 };
 
+//Direct manipulation input, from a trackpad and later touch
+enum GestureType {
+	//x: change in scale, positive when the fingers spread apart
+	GT_Pinch,
+	//x: degrees turned, positive counter-clockwise
+	GT_Rotate,
+	//x, y: movement in points, positive right and down
+	GT_Pan,
+};
+
+struct Gesture {
+	GestureType type;
+	double x, y;
+};
+
 struct WindowData {
 	int width, height;
 	int redbits, greenbits, bluebits, alphabits;
@@ -166,8 +181,7 @@ public:
 	DriverCallbacks onWindowClose;
 	DriverCallbacks_1<unsigned> onCharTyped;
 	DriverCallbacks_2<double,double> onScroll;
-	//Trackpad pinch: change in scale, positive when spreading fingers apart
-	DriverCallbacks_1<double> onMagnify;
+	DriverCallbacks_1<Gesture> onGesture;
 	DriverCallbacks_2<int,int> onResize, onMouseButton, onMouseMoved, onKeyEvent;
 
 	bool shiftKey, altKey, ctrlKey;

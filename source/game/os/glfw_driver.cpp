@@ -45,7 +45,7 @@ void redirectMouseButton(GLFWwindow*,int button, int action, int mods);
 void redirectMouseMove(GLFWwindow*,double x, double y);
 void redirectMouseWheel(GLFWwindow*,double x, double y);
 #ifdef __APPLE__
-void redirectMagnify(double magnification);
+void redirectGesture(int type, double x, double y);
 #endif
 void trackMouseOver(GLFWwindow*,int over);
 void glfwError(int, const char*);
@@ -361,7 +361,7 @@ public:
 		glfwSetMouseButtonCallback(window, redirectMouseButton);
 		glfwSetScrollCallback(window, redirectMouseWheel);
 #ifdef __APPLE__
-		attachCocoaWindow(window, redirectMagnify);
+		attachCocoaWindow(window, redirectGesture);
 #endif
 		glfwSetCursorPosCallback(window, redirectMouseMove);
 		glfwSetCursorEnterCallback(window, trackMouseOver);
@@ -781,8 +781,8 @@ void redirectMouseMove(GLFWwindow*, double x, double y) {
 }
 
 #ifdef __APPLE__
-void redirectMagnify(double magnification) {
-	driver->onMagnify(magnification);
+void redirectGesture(int type, double x, double y) {
+	driver->onGesture({(GestureType)type, x, y});
 }
 #endif
 

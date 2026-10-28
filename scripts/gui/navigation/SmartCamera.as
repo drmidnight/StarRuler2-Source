@@ -84,6 +84,13 @@ class SmartCamera : Savable {
 		}
 	}
 
+	//Turn for a trackpad rotate step, by the same angle as the fingers.
+	//Like any direct manipulation, it ignores the inverted rotation settings.
+	void twist(double degrees) {
+		CAM_ROTATED = true;
+		camera.abs_yaw(-degrees * twopi / 360.0);
+	}
+
 	//Roll based on dragged script pixels
 	void roll(int delta) {
 		CAM_ROTATED = true;

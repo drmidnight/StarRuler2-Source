@@ -2,7 +2,7 @@
 
 Status: 2026-10-27. M0 to M4 are merged to `master` (M3 partly: M3.1, M3.2, M3.4, M3.5 phase 1 and
 M3.7 are done; the M4 window-mode test matrix is partly run). M5 is in progress on `m5-renderer`:
-M5.1 is done, and M5.2's CPU-side half. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
+M5.1 to M5.4 are done; M5.5 is next. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
 Measurements are in [benchmark.md](benchmark.md).
 
 This plan moves the Apple Silicon fork from OpenGL 2.1 to a native Metal renderer and replaces the
@@ -571,6 +571,31 @@ The original plan follows.
 - **Wireframe:** `glPolygonMode` stays available in GL core.
 
 ### M5.3 The shader shim
+Done. `render/shader_shim.cpp` has two targets:
+- **GLSL 1.20 (`ST_GLSL120`), live in the game.** Every shader compiles through it. Built-in state
+  comes from `sr_*` uniforms that `GLShaderProgram::uploadBuiltins` fills from `BuiltinState`
+  (`render/shader_builtins.h`) before each draw, when its serials have changed. If a shimmed shader
+  fails to compile, the original is used and the log says so. Fixed-function state is still uploaded
+  too, for draws without a shader.
+- **GLSL 4.10 core (`ST_GLSL410`), for M5.5 and the translator.** Use `shimProgram`, which shims
+  both stages together.
+
+What the shim does beyond the original list:
+- Declares only the `sr_*` built-ins a shader uses.
+- Wraps `texture2D`/`textureCube` calls (`sr_texture2D`, ...), because many shaders name a sampler
+  `texture`, which hides the core function.
+- Renames names that are core GLSL keywords (`sample` in 8 shaders) or Metal built-ins (`atan2` in
+  the ringworld shader) to `sr_kw_*`.
+- Turns fragment varyings the vertex shader never declares into plain globals (9 programs). GL left
+  them undefined; Metal can't link them.
+- Vertex shaders always output `sr_FrontColor`, so any fragment shader reading `gl_Color` links.
+- Attribute locations are fixed (`ShaderAttribute`), including `in_position`, which 9 shaders used
+  without a binding and only worked because the linker put it at 0. Batches feed generic attributes
+  as well as the fixed-function arrays.
+- `glUseProgram` is skipped when the program is already bound.
+
+The original plan follows.
+
 Lives in `render/shader_shim.cpp` (backend-neutral) and is called from `preProcessShader` in
 `gl_shader.cpp`. It takes GLSL 1.20 source, including mod shaders, and produces modern GLSL:
 
@@ -618,6 +643,20 @@ Loose `uniform` declarations stay as they are:
 Remove `data/shaders/source/fs_test_ps.txt` (`#version 130`) if it is unused, or shim it.
 
 ### M5.4 Translation toolchain and validator
+Done:
+- `build_deps.sh` builds glslang and SPIRV-Cross at `vulkan-sdk-1.4.357.0`, with their command-line
+  tools in `deps/macos/bin`.
+- `render/shader_translate.cpp`: `translateProgram` runs a shimmed program through glslang
+  (Vulkan relaxed rules, global block `SRUniforms`) and SPIRV-Cross (MSL 3.0, `fixup_clipspace`),
+  with entry points `sr_vertex`/`sr_fragment`. Fragment inputs take the location of the vertex
+  output with the same name. Reflection names uniforms as GL does (`sr_LightSource[1].diffuse`).
+  Both stages of a program get the same uniform block layout, so M6 can bind one buffer to both.
+- `make -f source/linux/Makefile shadertool` builds and runs `bin/osx64/shadertool`, which takes
+  every program through to `xcrun metal`. All 93 base-game programs pass. `--mod <folder>` adds a
+  mod's shaders. The game binary doesn't link glslang yet.
+
+The original plan follows.
+
 - Add glslang and SPIRV-Cross to `build_deps.sh`, as static libraries with pinned release tags and
   SHA-256. Build only the needed targets: glslang with SPIR-V output; SPIRV-Cross core, MSL and
   reflect.

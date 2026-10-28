@@ -1,15 +1,10 @@
 #include "line_trail_node.h"
 #include "render/driver.h"
-#include "compat/gl.h"
 #include "main/references.h"
 #include "render/vertexBuffer.h"
 
 extern double frameLen_s;
 extern double pixelSizeRatio;
-
-namespace render {
-	extern const RenderMesh* lastRenderedMesh;
-};
 
 namespace scene {
 

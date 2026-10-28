@@ -31,7 +31,6 @@
 
 #include "../as_addons/include/scriptarray.h"
 
-#include "compat/gl.h"
 
 #include "ISoundDevice.h"
 

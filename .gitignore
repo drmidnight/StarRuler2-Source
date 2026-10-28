@@ -38,3 +38,4 @@
 /source/glfw/src/glfwConfig*.cmake
 /source/glfw/src/libglfw3.a
 /deps/
+__pycache__/

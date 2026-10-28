@@ -18,7 +18,7 @@ mkdir -p "$PREFIX" "$WORK"
 
 #name url sha256
 fetch() {
-	local name="$1" url="$2" sha="$3" file="$WORK/$(basename "$2")"
+	local name="$1" url="$2" sha="$3" file="$WORK/$1-$(basename "$2")"
 	if [[ ! -f "$file" ]]; then
 		curl -fL --retry 3 -o "$file.part" "$url"
 		mv "$file.part" "$file"
@@ -68,6 +68,19 @@ echo "built glew"
 fetch glfw https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip \
 	b5ec004b2712fd08e8861dc271428f048775200a2df719ccf575143ba749a3e9
 cmake_build glfw -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF
+
+#Shader translation: GLSL to SPIR-V, then SPIR-V to MSL with reflection. The command line
+#tools (glslang, spirv-cross) are kept for checking shaders by hand.
+fetch glslang https://github.com/KhronosGroup/glslang/archive/refs/tags/vulkan-sdk-1.4.357.0.tar.gz \
+	81038794e20494556edbcc0fc70fa984d71d1b440f9c49adf2cbaaa60a519757
+cmake_build glslang -DENABLE_OPT=OFF -DENABLE_HLSL=OFF -DGLSLANG_TESTS=OFF -DBUILD_EXTERNAL=OFF \
+	-DENABLE_GLSLANG_BINARIES=ON -DGLSLANG_ENABLE_INSTALL=ON
+
+fetch spirv-cross https://github.com/KhronosGroup/SPIRV-Cross/archive/refs/tags/vulkan-sdk-1.4.357.0.tar.gz \
+	97c910326afdd44d794ce8561326fa675fd1958b27142f03295403044d639639
+#The CLI needs every backend, so they stay on
+cmake_build spirv-cross -DSPIRV_CROSS_SHARED=OFF -DSPIRV_CROSS_STATIC=ON -DSPIRV_CROSS_CLI=ON \
+	-DSPIRV_CROSS_ENABLE_TESTS=OFF -DSPIRV_CROSS_ENABLE_C_API=OFF
 
 #Only static archives may be found in the prefix, so the linker can never pick a dylib
 find "$PREFIX/lib" -name "*.dylib" -delete

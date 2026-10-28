@@ -1,8 +1,9 @@
 # Metal Backend and Threading Overhaul Plan
 
 Status: 2026-10-27. M0, M1 and M2 are merged to `master`. M3 is partly done on `m3-scheduler`
-(M3.1, M3.2, M3.4 and M3.5 phase 1). The rest of M3 is deferred, and M4 is next. Measurements are in
-[benchmark.md](benchmark.md).
+(M3.1, M3.2, M3.4, M3.5 phase 1, and M3.7 on `m4-glfw`). M4 is in progress on `m4-glfw`, which builds
+on `m3-scheduler`: M4.1 and M4.2 are done, M4.3 is done except the gamepad, and M4.4 is next.
+Measurements are in [benchmark.md](benchmark.md).
 
 This plan moves the Apple Silicon fork from OpenGL 2.1 to a native Metal renderer and replaces the
 engine's spin-and-sleep threading with blocking, QoS-aware primitives. The fork is Apple-only
@@ -271,7 +272,11 @@ measure it). No behaviour change in gameplay.
   the workers use about 2% each. At the fastest speed the pool saturates all cores, and the physics
   rwlock is about 15% of the busy samples.
 
-**Still to do:** M3.3, M3.6, M3.7 (may fold into M4.3, which touches `swapBuffers`), M1 item 5 and the
+**M3.7 done on `m4-glfw`:** `swapBuffers` waits out the frame limit in `glfwWaitEventsTimeout`
+instead of spinning, and `handleEvents` waits the same way. Paused on the benchmark save, the main
+thread went from about 0.8 cores to 0.25.
+
+**Still to do:** M3.3, M3.6, M1 item 5 and the
 `PhysicsGrid::updateItem` rwlock contention, and the non-atomic `received` flag in
 `bind_object.cpp` (`GetObjNode`/`GetObjName`). The in-game save/quit/new-game pass has not been run.
 
@@ -384,6 +389,31 @@ near-zero CPU. Simulation throughput is equal or better. TSan is clean or triage
 ---
 
 ## M4: GLFW 3.4 upgrade
+
+**Partly done, with these differences from the plan below:**
+- GLFW 3.4 builds from `build_deps.sh`, pinned by SHA-256, and `source/glfw/` is deleted. Without
+  `deps/macos`, the Makefile uses Homebrew's `glfw`.
+- Fixed upstream: the key table swap, the monitor name crash, and the cursor warp freeze.
+- `os/cocoa_window.mm` holds all native window code, so GLFW stays unpatched:
+  - precise scrolling and pinch to zoom come from `NSEvent` local monitors;
+  - borderless fullscreen at the desktop size stays. GLFW 3.4 picks the closest listed video mode, and
+    macOS doesn't list scaled Retina desktop modes (1800x1169 on a 14" MacBook Pro), so GLFW would
+    switch the display to 1920x1200;
+  - the borderless window overrides `constrainFrameRect:toScreen:` while it covers the screen. Without
+    it, the menu bar pushes the window down when it slides in.
+- `GLFW_CURSOR_CAPTURED` is unimplemented on Cocoa, so on macOS capturing keeps the normal cursor, as
+  the old patch did.
+- `glfwFlashWindow` became `glfwRequestWindowAttention`. The fork's `glfwGetCharForKey` and
+  `glfwGetKeyForChar` moved into the driver.
+- New: Cmd+Enter and the options menu's fullscreen toggle switch the window live, through
+  `OSDriver::setFullscreen` and `applyWindowSettings`. A live switch always uses borderless
+  fullscreen at the desktop size. A specific fullscreen resolution still needs a restart.
+- The driver tracks `fb_width`/`fb_height` apart from `win_width`/`win_height`. The screen's
+  viewport, scissor and screenshots use the framebuffer size, while the UI and the mouse use the window
+  size. GLFW reports the backing size even for an unscaled surface, so on macOS the framebuffer size
+  comes from the `retinaFramebuffer` flag.
+
+**Still to do:** the gamepad port (M4.3), Retina (M4.4), and the window-mode test matrix below.
 
 ### M4.1 Build integration
 - Add GLFW 3.4 to `source/macos/build_deps.sh`:

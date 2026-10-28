@@ -31,10 +31,14 @@ struct BuiltinState {
 	//2 for an alpha-only one. They count as material state.
 	int fixedLighting, fixedTexture;
 
+	//Fragments with alpha at or below alphaRef are discarded when alphaTest is set
+	int alphaTest;
+	float alphaRef;
+
 	unsigned matrixSerial, lightSerial, materialSerial;
 
 	BuiltinState() : materialShininess(0.f), fixedLighting(0), fixedTexture(0),
-		matrixSerial(1), lightSerial(1), materialSerial(1) {
+		alphaTest(0), alphaRef(1.f/255.f), matrixSerial(1), lightSerial(1), materialSerial(1) {
 		//GL's initial state
 		for(unsigned i = 0; i < MAX_LIGHTS; ++i) {
 			auto& light = lights[i];

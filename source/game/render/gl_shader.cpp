@@ -174,7 +174,7 @@ public:
 	LightLocations lights[MAX_LIGHTS];
 	GLint materialEmission, materialAmbient, materialDiffuse, materialSpecular, materialShininess;
 	GLint lightModelAmbient, lightEnabled;
-	GLint fixedLighting, fixedTexture;
+	GLint fixedLighting, fixedTexture, alphaTest, alphaRef;
 	bool usesMatrices, usesLights, usesMaterial;
 	unsigned matrixSerial, lightSerial, materialSerial;
 
@@ -243,8 +243,11 @@ public:
 		materialShininess = find("sr_FrontMaterial.shininess");
 		fixedLighting = find("sr_FixedLighting");
 		fixedTexture = find("sr_FixedTexture");
+		alphaTest = find("sr_AlphaTest");
+		alphaRef = find("sr_AlphaRef");
 		usesMaterial = materialEmission >= 0 || materialAmbient >= 0 || materialDiffuse >= 0
-			|| materialSpecular >= 0 || materialShininess >= 0 || fixedLighting >= 0 || fixedTexture >= 0;
+			|| materialSpecular >= 0 || materialShininess >= 0 || fixedLighting >= 0 || fixedTexture >= 0
+			|| alphaTest >= 0 || alphaRef >= 0;
 
 		matrixSerial = lightSerial = materialSerial = 0;
 	}
@@ -334,6 +337,10 @@ public:
 				glUniform1i(fixedLighting, state.fixedLighting);
 			if(fixedTexture >= 0)
 				glUniform1i(fixedTexture, state.fixedTexture);
+			if(alphaTest >= 0)
+				glUniform1i(alphaTest, state.alphaTest);
+			if(alphaRef >= 0)
+				glUniform1f(alphaRef, state.alphaRef);
 		}
 	}
 

@@ -30,25 +30,22 @@ void glDrawBatch(const VertexTCV* vertices, unsigned vertexCount,
 	const RenderStep* steps, unsigned stepCount);
 float* shaderUniforms = 0;
 
-bool alphaTest = false, blend = false;
+bool blend = false;
+
+//Whether fragments of <mat> go through the alpha test
+static inline bool usesAlphaTest(BaseMaterial mat) {
+	return mat == MAT_Alpha || mat == MAT_Font || mat == MAT_Overlay;
+}
 
 static inline void setRenderFuncs(BaseMaterial mat, bool intermediate) {
 	switch(mat) {
 		case MAT_Solid:
-			if(alphaTest) {
-				glDisable(GL_ALPHA_TEST);
-				alphaTest = false;
-			}
 			if(blend) {
 				glDisable(GL_BLEND);
 				blend = false;
 			}
 		break;
 		case MAT_Add:
-			if(alphaTest) {
-				glDisable(GL_ALPHA_TEST);
-				alphaTest = false;
-			}
 			if(!blend) {
 				glEnable(GL_BLEND);
 				blend = true;
@@ -59,10 +56,6 @@ static inline void setRenderFuncs(BaseMaterial mat, bool intermediate) {
 			break;
 		case MAT_Alpha:
 		case MAT_Font:
-			if(!alphaTest) {
-				glEnable(GL_ALPHA_TEST);
-				alphaTest = true;
-			}
 			if(!blend) {
 				glEnable(GL_BLEND);
 				blend = true;
@@ -77,10 +70,6 @@ static inline void setRenderFuncs(BaseMaterial mat, bool intermediate) {
 			}
 		break;
 		case MAT_Overlay:
-			if(!alphaTest) {
-				glEnable(GL_ALPHA_TEST);
-				alphaTest = true;
-			}
 			if(!blend) {
 				glEnable(GL_BLEND);
 				blend = true;
@@ -285,8 +274,8 @@ public:
 		glEnable(GL_DEPTH_TEST);
 		glDepthFunc(GL_LESS);
 
-		glAlphaFunc(GL_GREATER, 1.f/255.f);
 		setRenderFuncs(MAT_Solid, false);
+		setAlphaTest(MAT_Solid);
 
 		glEnable(GL_LIGHTING);
 
@@ -613,6 +602,7 @@ public:
 
 		if(state.baseMat != activeRenderState.baseMat) {
 			setRenderFuncs(state.baseMat, intermediateBlend);
+			setAlphaTest(state.baseMat);
 		}
 
 		if(!state.shader && (state.lighting != activeRenderState.lighting || activeRenderState.shader)) {
@@ -695,6 +685,14 @@ public:
 			shader->bind(nullptr);
 		else
 			glUnbindProgram();
+	}
+
+	void setAlphaTest(BaseMaterial mat) {
+		int test = usesAlphaTest(mat) ? 1 : 0;
+		if(test != builtins.alphaTest) {
+			builtins.alphaTest = test;
+			++builtins.materialSerial;
+		}
 	}
 
 	//Every draw needs a program; draws after setDefaultRenderState have none yet

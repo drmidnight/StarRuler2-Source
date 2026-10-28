@@ -27,6 +27,16 @@ namespace render {
 	};
 
 	class Camera;
+
+	//Most lights that can be active at once
+	const unsigned MAX_LIGHTS = 8;
+
+	struct LightDesc {
+		//Transformed by the current model transform when set
+		float position[4];
+		Colorf diffuse, specular;
+		float quadraticAttenuation;
+	};
 	struct VertexTCV;
 	struct RenderStep;
 
@@ -64,6 +74,9 @@ public:
 	virtual void resetTransformation() = 0;
 	
 	virtual void getInverseView(float* mat3) const = 0;
+
+	//Sets light <index>, or disables it when <light> is null
+	virtual void setLight(unsigned index, const LightDesc* light) = 0;
 
 	virtual void getBillboardVecs(vec3d& upLeft, vec3d& upRight, double rotation = 0) const = 0;
 	virtual void getBillboardVecs(const vec3d& from, vec3d& upLeft, vec3d& upRight, double rotation = 0) const = 0;

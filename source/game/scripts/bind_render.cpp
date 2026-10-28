@@ -1486,7 +1486,7 @@ threads::threadreturn threadcall ImageLoadThread(void* ptr) {
 	return 0;
 }
 
-const unsigned MAX_LIGHTS = 8;
+const unsigned MAX_LIGHTS = render::MAX_LIGHTS;
 unsigned activeLights = 0;
 render::light::PointLight lights[MAX_LIGHTS];
 

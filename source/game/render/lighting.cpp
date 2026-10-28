@@ -1,5 +1,6 @@
 #include "lighting.h"
-#include "compat/gl.h"
+#include "render/driver.h"
+#include "main/references.h"
 #include <set>
 
 namespace render {
@@ -16,15 +17,10 @@ void setPosition(const vec3f& pos);
 void setPosition(const vec3d& pos);
 
 void PointLight::enable(unsigned& lightIndex, const vec3f& offset) {
-	GLenum LIGHT = GL_LIGHT0 + lightIndex; ++lightIndex;
-	glEnable(LIGHT);
-	glLightfv(LIGHT,GL_DIFFUSE,(GLfloat*)&diffuse);
-	glLightfv(LIGHT,GL_SPECULAR,(GLfloat*)&specular);
-
-	glLightf(LIGHT,GL_QUADRATIC_ATTENUATION,att_quadratic);
-	
-	float pos[4] = {position.x + offset.x, position.y + offset.y, position.z + offset.z, 1.f};
-	glLightfv(LIGHT,GL_POSITION,(GLfloat*)&pos);
+	LightDesc light = {{position.x + offset.x, position.y + offset.y, position.z + offset.z, 1.f},
+		diffuse, specular, att_quadratic};
+	devices.render->setLight(lightIndex, &light);
+	++lightIndex;
 }
 
 vec3f PointLight::getPosition() const {
@@ -94,25 +90,19 @@ void destroyLights() {
 }
 
 void resetLights() {
-	Colorf diffuse, specular;
-	float pos[4] = {0.f, 0.f, 0.f, 1.f};
+	for(unsigned i = 1; i < MAX_LIGHTS; ++i)
+		devices.render->setLight(i, nullptr);
 
-	for(unsigned i = 1; i < 8; ++i)
-		glDisable(GL_LIGHT0 + i);
-
-	glEnable(GL_LIGHT0);
-	glLightfv(GL_LIGHT0, GL_DIFFUSE, (GLfloat*)&diffuse);
-	glLightfv(GL_LIGHT0, GL_SPECULAR, (GLfloat*)&specular);
-	glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.f);
-	glLightfv(GL_LIGHT0, GL_POSITION, (GLfloat*)&pos);
+	LightDesc light = {{0.f, 0.f, 0.f, 1.f}, Colorf(), Colorf(), 0.f};
+	devices.render->setLight(0, &light);
 }
 
 //Finds up to <maximum> nearest lights to <from>
 unsigned findNearestLights(const vec3f& from, LightSource** pLights, unsigned maximum) {
 	unsigned found = 0;
-	float distances[GL_MAX_LIGHTS];
-	if(maximum > GL_MAX_LIGHTS)
-		maximum = GL_MAX_LIGHTS;
+	float distances[MAX_LIGHTS];
+	if(maximum > MAX_LIGHTS)
+		maximum = MAX_LIGHTS;
 
 	for(auto i = lights.begin(), end = lights.end(); i != end; ++i) {
 		float dist = (*i)->distanceFrom(from);

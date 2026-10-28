@@ -1291,6 +1291,19 @@ public:
 			cleared = false;
 	}
 
+	void setLight(unsigned index, const LightDesc* light) override {
+		GLenum id = GL_LIGHT0 + index;
+		if(!light) {
+			glDisable(id);
+			return;
+		}
+		glEnable(id);
+		glLightfv(id, GL_DIFFUSE, (GLfloat*)&light->diffuse);
+		glLightfv(id, GL_SPECULAR, (GLfloat*)&light->specular);
+		glLightf(id, GL_QUADRATIC_ATTENUATION, light->quadraticAttenuation);
+		glLightfv(id, GL_POSITION, light->position);
+	}
+
 	void drawBatch(const VertexTCV* vertices, unsigned vertexCount,
 		const unsigned short* indices, unsigned indexCount,
 		const RenderStep* steps, unsigned stepCount) override {

@@ -20,19 +20,34 @@ static const unsigned framesInFlight = 3;
 static const unsigned vertexDataBuffer = 30;
 static const unsigned defaultsBuffer = 29;
 
-//Vertex layouts pipelines are built for
+//Vertex layouts pipelines are built for. Meshes add flags for their optional buffers.
 enum Layout {
-	L_Batch,
-	L_Mesh,
+	L_Batch = 0,
+	L_Mesh = 1,
+	L_MeshTangents = 2,
+	L_MeshColors = 4,
+	L_MeshUV2 = 8,
 };
 
-//Placeholder until meshes have their Metal implementation
+//Buffers for optional mesh data
+static const unsigned tangentBuffer = 28;
+static const unsigned colorBuffer = 27;
+static const unsigned uv2Buffer = 26;
+
+class Mesh;
+static void drawMesh(const Mesh& mesh);
+
 class Mesh : public RenderMesh {
 	::Mesh mesh;
 	AABBoxf bbox;
 	double lodDistance = 1;
 	const RenderMesh* lod = nullptr;
 public:
+	id<MTLBuffer> vertices = nil, indices = nil;
+	id<MTLBuffer> tangents = nil, colors = nil, uvs2 = nil;
+	unsigned indexCount = 0;
+	unsigned layout = L_Mesh;
+
 	Mesh(const ::Mesh& m) {
 		resetToMesh(m);
 	}
@@ -40,6 +55,31 @@ public:
 	void resetToMesh(const ::Mesh& m) override {
 		mesh = m;
 		bbox = AABBoxf();
+		vertices = indices = tangents = colors = uvs2 = nil;
+		indexCount = 0;
+		layout = L_Mesh;
+		if(mesh.vertices.empty() || mesh.faces.empty())
+			return;
+
+		auto buffer = [](const void* data, size_t bytes) {
+			return [device newBufferWithBytes:data length:bytes options:MTLResourceStorageModeShared];
+		};
+		vertices = buffer(mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
+		indices = buffer(mesh.faces.data(), mesh.faces.size() * sizeof(::Mesh::Face));
+		indexCount = (unsigned)mesh.faces.size() * 3;
+		if(!mesh.tangents.empty()) {
+			tangents = buffer(mesh.tangents.data(), mesh.tangents.size() * sizeof(vec4f));
+			layout |= L_MeshTangents;
+		}
+		if(!mesh.colors.empty()) {
+			colors = buffer(mesh.colors.data(), mesh.colors.size() * sizeof(Colorf));
+			layout |= L_MeshColors;
+		}
+		if(!mesh.uvs2.empty()) {
+			uvs2 = buffer(mesh.uvs2.data(), mesh.uvs2.size() * sizeof(vec4f));
+			layout |= L_MeshUV2;
+		}
+
 		for(auto& v : mesh.vertices)
 			bbox.addPoint(v.position);
 	}
@@ -54,8 +94,13 @@ public:
 	}
 	const AABBoxf& getBoundingBox() const override { return bbox; }
 	const ::Mesh& getMesh() const override { return mesh; }
-	unsigned getMeshBytes() const override { return 0; }
-	void render() const override {}
+	unsigned getMeshBytes() const override {
+		return indexCount ? (unsigned)(mesh.vertices.size() * sizeof(float) * 8 + indexCount * sizeof(short)) : 0;
+	}
+	void render() const override {
+		if(indexCount)
+			drawMesh(*this);
+	}
 };
 
 class Driver : public BaseDriver {
@@ -512,49 +557,96 @@ public:
 		}
 	}
 
-	id<MTLRenderPipelineState> pipelineFor(ShaderProgram* program, Layout layout) {
+	//Where a shader input comes from in a vertex layout
+	static void describeInput(MTLVertexAttributeDescriptor* attr, unsigned layout, VertexInput input) {
+		attr.bufferIndex = defaultsBuffer;
+		attr.format = MTLVertexFormatFloat4;
+		attr.offset = input * 16;
+		if(layout == L_Batch) {
+			switch(input) {
+				case VI_Vertex:
+					attr.bufferIndex = vertexDataBuffer;
+					attr.format = MTLVertexFormatFloat3;
+					attr.offset = offsetof(VertexTCV, pos);
+					break;
+				case VI_UV:
+					attr.bufferIndex = vertexDataBuffer;
+					attr.format = MTLVertexFormatFloat2;
+					attr.offset = offsetof(VertexTCV, uv);
+					break;
+				case VI_Color:
+					attr.bufferIndex = vertexDataBuffer;
+					attr.format = MTLVertexFormatUChar4Normalized;
+					attr.offset = offsetof(VertexTCV, col);
+					break;
+				default:
+					break;
+			}
+			return;
+		}
+
+		switch(input) {
+			case VI_Vertex:
+				attr.bufferIndex = vertexDataBuffer;
+				attr.format = MTLVertexFormatFloat3;
+				attr.offset = offsetof(Vertex, position);
+				break;
+			case VI_UV:
+				attr.bufferIndex = vertexDataBuffer;
+				attr.format = MTLVertexFormatFloat2;
+				attr.offset = offsetof(Vertex, u);
+				break;
+			case VI_Normal:
+				attr.bufferIndex = vertexDataBuffer;
+				attr.format = MTLVertexFormatFloat3;
+				attr.offset = offsetof(Vertex, normal);
+				break;
+			case VI_Tangent:
+				if(layout & L_MeshTangents) {
+					attr.bufferIndex = tangentBuffer;
+					attr.offset = 0;
+				}
+				break;
+			case VI_Color:
+				if(layout & L_MeshColors) {
+					attr.bufferIndex = colorBuffer;
+					attr.offset = 0;
+				}
+				break;
+			case VI_UV2:
+				if(layout & L_MeshUV2) {
+					attr.bufferIndex = uv2Buffer;
+					attr.offset = 0;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+
+	id<MTLRenderPipelineState> pipelineFor(ShaderProgram* program, unsigned layout) {
 		unsigned key = activeRenderState.baseMat | (intermediateBlend ? 8 : 0) | (layout << 4);
 		auto it = program->pipelines.find(key);
 		if(it != program->pipelines.end())
 			return it->second;
 
 		MTLVertexDescriptor* vertex = [MTLVertexDescriptor vertexDescriptor];
-		bool usesData = false, usesDefaults = false;
+		bool usesBuffer[31] = {};
 		for(auto& input : program->inputs) {
 			auto* attr = vertex.attributes[input.first];
-			attr.bufferIndex = defaultsBuffer;
-			attr.format = MTLVertexFormatFloat4;
-			attr.offset = input.second * 16;
-			if(layout == L_Batch) {
-				switch(input.second) {
-					case VI_Vertex:
-						attr.bufferIndex = vertexDataBuffer;
-						attr.format = MTLVertexFormatFloat3;
-						attr.offset = offsetof(VertexTCV, pos);
-						break;
-					case VI_UV:
-						attr.bufferIndex = vertexDataBuffer;
-						attr.format = MTLVertexFormatFloat2;
-						attr.offset = offsetof(VertexTCV, uv);
-						break;
-					case VI_Color:
-						attr.bufferIndex = vertexDataBuffer;
-						attr.format = MTLVertexFormatUChar4Normalized;
-						attr.offset = offsetof(VertexTCV, col);
-						break;
-					default:
-						break;
-				}
-			}
-			if(attr.bufferIndex == vertexDataBuffer)
-				usesData = true;
-			else
-				usesDefaults = true;
+			describeInput(attr, layout, input.second);
+			usesBuffer[attr.bufferIndex] = true;
 		}
 		//Metal rejects layouts no attribute reads
-		if(usesData)
-			vertex.layouts[vertexDataBuffer].stride = sizeof(VertexTCV);
-		if(usesDefaults) {
+		if(usesBuffer[vertexDataBuffer])
+			vertex.layouts[vertexDataBuffer].stride = layout == L_Batch ? sizeof(VertexTCV) : sizeof(Vertex);
+		if(usesBuffer[tangentBuffer])
+			vertex.layouts[tangentBuffer].stride = sizeof(vec4f);
+		if(usesBuffer[colorBuffer])
+			vertex.layouts[colorBuffer].stride = sizeof(Colorf);
+		if(usesBuffer[uv2Buffer])
+			vertex.layouts[uv2Buffer].stride = sizeof(vec4f);
+		if(usesBuffer[defaultsBuffer]) {
 			vertex.layouts[defaultsBuffer].stride = 16;
 			vertex.layouts[defaultsBuffer].stepFunction = MTLVertexStepFunctionConstant;
 			vertex.layouts[defaultsBuffer].stepRate = 0;
@@ -626,7 +718,7 @@ public:
 	//-- Drawing
 
 	//Sets up the encoder for a draw with the current state, or returns false to skip it
-	bool prepareDraw(Layout layout) {
+	bool prepareDraw(unsigned layout) {
 		if(activeRenderState.culling == FC_Both)
 			return false;
 		if(!beginPass())
@@ -729,6 +821,20 @@ public:
 		shaderUniforms = nullptr;
 	}
 
+	void drawMesh(const Mesh& mesh) {
+		if(!prepareDraw(mesh.layout))
+			return;
+		[encoder setVertexBuffer:mesh.vertices offset:0 atIndex:vertexDataBuffer];
+		if(mesh.tangents)
+			[encoder setVertexBuffer:mesh.tangents offset:0 atIndex:tangentBuffer];
+		if(mesh.colors)
+			[encoder setVertexBuffer:mesh.colors offset:0 atIndex:colorBuffer];
+		if(mesh.uvs2)
+			[encoder setVertexBuffer:mesh.uvs2 offset:0 atIndex:uv2Buffer];
+		[encoder drawIndexedPrimitives:MTLPrimitiveTypeTriangle indexCount:mesh.indexCount
+			indexType:MTLIndexTypeUInt16 indexBuffer:mesh.indices indexBufferOffset:0];
+	}
+
 	//-- Resources
 
 	RenderMesh* createMesh(const ::Mesh& mesh) override {
@@ -761,6 +867,10 @@ public:
 		return new RenderTarget(size);
 	}
 };
+
+static void drawMesh(const Mesh& mesh) {
+	((Driver*)devices.render)->drawMesh(mesh);
+}
 
 void finishPendingWork() {
 	((Driver*)devices.render)->finishPendingWork();

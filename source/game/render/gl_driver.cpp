@@ -509,10 +509,30 @@ public:
 			++builtins.materialSerial;
 		}
 
+		//FixedFunction declares its sampler either way, and drivers check what it is
+		//bound to, so it gets white when it samples nothing. Unit 0 is then marked as
+		//holding white, so the next state that wants its own texture there rebinds it.
+		if(texture == 0) {
+			setTextureStage(GL_TEXTURE0);
+			getWhiteTexture()->bind();
+			activeRenderState.textures[0] = getWhiteTexture();
+		}
+
 		if(auto* shader = getFixedFunction())
 			shader->bind(nullptr);
 		else
 			glUnbindProgram();
+	}
+
+	//A 1x1 white texture for samplers with nothing to sample
+	Texture* whiteTexture = nullptr;
+
+	Texture* getWhiteTexture() {
+		if(!whiteTexture) {
+			Image white(1, 1, FMT_RGBA, 0xff);
+			whiteTexture = createTexture(white, false);
+		}
+		return whiteTexture;
 	}
 
 	void setAlphaTest(BaseMaterial mat) {

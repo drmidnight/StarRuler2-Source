@@ -112,6 +112,8 @@ public:
 	//when the driver's own vertical sync can't keep up with the display
 	int vsyncFrames = 0;
 	double vsyncInterval_s = 0.0;
+	//Whether the window has an OpenGL context, or another renderer presents into it
+	bool openGL = true;
 
 	GLFWDriver() : window(0), mouseOver(true), canLock(false), shouldLock(false), borderless(false), retinaFramebuffer(true) {
 		glfwSetErrorCallback(glfwError);
@@ -151,6 +153,11 @@ public:
 	void setVerticalSync(int waitFrames) {
 		vsyncFrames = waitFrames;
 		vsyncInterval_s = 0.0;
+		if(!openGL) {
+			if(devices.render)
+				devices.render->setVerticalSync(waitFrames);
+			return;
+		}
 #ifdef __APPLE__
 		//OpenGL on macOS presents at no more than 60Hz, even on 120Hz displays, so faster
 		//displays get no swap interval and the frame limiter paces to their refresh instead.
@@ -219,7 +226,8 @@ public:
 	}
 
 	void swapBuffers(double minWait_s) {
-		glfwSwapBuffers(window);
+		if(openGL)
+			glfwSwapBuffers(window);
 		glfwPollEvents();
 		readGamepads();
 		if(devices.cloud)
@@ -272,12 +280,18 @@ public:
 	}
 
 	void createWindow(WindowData& data) {
-		glfwWindowHint(GLFW_SAMPLES, data.aa_samples);
+		openGL = data.openGL;
 		glfwWindowHint(GLFW_REFRESH_RATE, data.refreshRate);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
-		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-		glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+		if(openGL) {
+			glfwWindowHint(GLFW_SAMPLES, data.aa_samples);
+			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+			glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+			glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+		}
+		else {
+			glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+		}
 		glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, retinaFramebuffer ? GLFW_TRUE : GLFW_FALSE);
 
 		GLFWmonitor* monitor = nullptr;
@@ -375,7 +389,8 @@ public:
 			return;
 		}
 
-		glfwMakeContextCurrent(window);
+		if(openGL)
+			glfwMakeContextCurrent(window);
 
 		glfwGetWindowSize(window, &win_width, &win_height);
 		updateFramebufferSize();
@@ -463,6 +478,14 @@ public:
 		}
 #endif
 		glfwGetFramebufferSize(window, &fb_width, &fb_height);
+	}
+
+	void* getNativeWindow() override {
+#ifdef __APPLE__
+		return window ? os::getNativeWindow(window) : nullptr;
+#else
+		return nullptr;
+#endif
 	}
 
 	void flashWindow() override {

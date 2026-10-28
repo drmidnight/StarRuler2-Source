@@ -109,6 +109,9 @@ public:
 
 	//Hands the frame to the display; drivers whose window swaps the frame need do nothing
 	virtual void presentFrame() {}
+	//Vertical sync for drivers that present their own frames: 0 is off, otherwise
+	//the number of display refreshes per frame
+	virtual void setVerticalSync(int frames) {}
 
 	virtual void drawFPSGraph(const recti& location) = 0;
 

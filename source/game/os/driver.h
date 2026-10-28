@@ -67,13 +67,15 @@ struct WindowData {
 	WindowMode mode;
 	std::string targetMonitor;
 	bool overrideMonitor;
+	//Whether the window gets an OpenGL context; other renderers draw into it themselves
+	bool openGL;
 
 	WindowData()
 	 : width(1024), height(768),
 	 redbits(8), greenbits(8), bluebits(8),
 	 alphabits(8), depthbits(8), stencilbits(8),
 	 aa_samples(4), refreshRate(0), resizable(false),
-	 verticalSync(1), mode(WM_Window), overrideMonitor(false) {}
+	 verticalSync(1), mode(WM_Window), overrideMonitor(false), openGL(true) {}
 };
 
 enum OSCallback {
@@ -204,6 +206,8 @@ public:
 	virtual bool systemRandom(unsigned char* buffer, unsigned bytes) = 0;
 
 	virtual void setVerticalSync(int waitFrames) = 0;
+	//The native window (an NSWindow on macOS), for renderers that attach to it
+	virtual void* getNativeWindow() { return nullptr; }
 
 	virtual void swapBuffers(double minWait_s = 0) = 0;
 	//NOTE: If you need to keep the program awake but can't render, use this instead of swapBuffers

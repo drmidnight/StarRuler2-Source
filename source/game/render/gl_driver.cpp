@@ -119,8 +119,19 @@ public:
 		bb_up_p_right, bb_up_m_right;
 	quaterniond BBFacingRot;
 
-	Colorf diffuse, specular;
+	//Material colours. Ambient is set once with the default diffuse, and never changes
+	Colorf ambient, diffuse, specular;
 	float shininess;
+
+	//Light state as shaders read it, with positions in eye space
+	struct LightState {
+		bool enabled;
+		vec4f position;
+		Colorf diffuse, specular;
+		float constantAttenuation, linearAttenuation, quadraticAttenuation;
+	};
+	LightState lights[MAX_LIGHTS];
+	Colorf lightModelAmbient;
 
 	RenderState state_3d;
 	RenderState state_2d;
@@ -146,6 +157,20 @@ public:
 		state_2d.baseMat = MAT_Alpha;
 		state_2d.culling = FC_None;
 		modelView.push_back(Matrix());
+
+		//GL's initial light state
+		for(unsigned i = 0; i < MAX_LIGHTS; ++i) {
+			auto& light = lights[i];
+			Colorf initial = i == 0 ? Colorf(1.f, 1.f, 1.f, 1.f) : Colorf(0.f, 0.f, 0.f, 1.f);
+			light.enabled = false;
+			light.position = vec4f(0.f, 0.f, 1.f, 0.f);
+			light.diffuse = initial;
+			light.specular = initial;
+			light.constantAttenuation = 1.f;
+			light.linearAttenuation = 0.f;
+			light.quadraticAttenuation = 0.f;
+		}
+		lightModelAmbient = Colorf(0.2f, 0.2f, 0.2f, 1.f);
 	}
 
 	~GLDriver() {
@@ -301,6 +326,7 @@ public:
 		textureStage = GL_TEXTURE0;
 
 		diffuse = Colorf(1.f, 1.f, 1.f, 1.f);
+		ambient = diffuse;
 		specular = Colorf(1.f, 1.f, 1.f, 1.f);
 		shininess = 8.f;
 		glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, (const GLfloat*)&diffuse);
@@ -1143,22 +1169,21 @@ public:
 		setDefaultRenderState();
 
 		//Lighting
-		float lightCol[4] = {2.5f, 2.5f, 2.5f, 1.f};
-		glLightfv(GL_LIGHT0, GL_DIFFUSE, lightCol);
-		float lightSpec[4] = {1, 1, 1, 1.f};
-		glLightfv(GL_LIGHT0, GL_SPECULAR, lightSpec);
-		glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 1.f/(500.f*500.f));
-		glEnable(GL_LIGHT0);
+		lights[0].enabled = true;
+		lights[0].diffuse = Colorf(2.5f, 2.5f, 2.5f, 1.f);
+		lights[0].specular = Colorf(1.f, 1.f, 1.f, 1.f);
+		lights[0].quadraticAttenuation = 1.f/(500.f*500.f);
+		applyLight(0);
 
-		float deadCol[4] = {0,0,0,1};
-		glLightfv(GL_LIGHT1, GL_DIFFUSE, deadCol);
-		glLightfv(GL_LIGHT1, GL_SPECULAR, deadCol);
-		glLightf(GL_LIGHT1, GL_QUADRATIC_ATTENUATION, 1.f/(500.f*500.f));
-		glEnable(GL_LIGHT1);
+		lights[1].enabled = true;
+		lights[1].diffuse = Colorf(0.f, 0.f, 0.f, 1.f);
+		lights[1].specular = Colorf(0.f, 0.f, 0.f, 1.f);
+		lights[1].quadraticAttenuation = 1.f/(500.f*500.f);
+		applyLight(1);
 
 		//System defaults
-		float globalAmbient[4] = {0.175f, 0.175f, 0.175f, 0.f};
-		glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmbient);
+		lightModelAmbient = Colorf(0.175f, 0.175f, 0.175f, 0.f);
+		glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (GLfloat*)&lightModelAmbient);
 
 		if(GLEW_ARB_seamless_cube_map)
 			glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
@@ -1236,7 +1261,7 @@ public:
 				vec3f camPosf(float(pos.x),float(pos.y),float(pos.z));
 				vec3f lightOffset = camPosf * -1.f;
 
-				glDisable(GL_LIGHT0);
+				setLight(0, nullptr);
 				light::LightSource* sources[2];
 				unsigned lightCount = light::findNearestLights(camPosf,sources,2);
 
@@ -1310,17 +1335,47 @@ public:
 			cleared = false;
 	}
 
-	void setLight(unsigned index, const LightDesc* light) override {
+	void setLight(unsigned index, const LightDesc* desc) override {
+		if(index >= MAX_LIGHTS)
+			return;
+		auto& light = lights[index];
+		if(!desc) {
+			light.enabled = false;
+			glDisable(GL_LIGHT0 + index);
+			return;
+		}
+		light.enabled = true;
+		light.diffuse = desc->diffuse;
+		light.specular = desc->specular;
+		light.quadraticAttenuation = desc->quadraticAttenuation;
+
+		//Positions go into eye space with the current transform, as glLight does
+		const Matrix& m = modelView.back();
+		const float* p = desc->position;
+		for(unsigned i = 0; i < 4; ++i)
+			(&light.position.x)[i] = (float)(m[i] * p[0] + m[4+i] * p[1] + m[8+i] * p[2] + m[12+i] * p[3]);
+		applyLight(index);
+	}
+
+	//Sends the CPU state of a light to GL
+	void applyLight(unsigned index) {
+		auto& light = lights[index];
 		GLenum id = GL_LIGHT0 + index;
-		if(!light) {
+		if(!light.enabled) {
 			glDisable(id);
 			return;
 		}
 		glEnable(id);
-		glLightfv(id, GL_DIFFUSE, (GLfloat*)&light->diffuse);
-		glLightfv(id, GL_SPECULAR, (GLfloat*)&light->specular);
-		glLightf(id, GL_QUADRATIC_ATTENUATION, light->quadraticAttenuation);
-		glLightfv(id, GL_POSITION, light->position);
+		glLightfv(id, GL_DIFFUSE, (GLfloat*)&light.diffuse);
+		glLightfv(id, GL_SPECULAR, (GLfloat*)&light.specular);
+		glLightf(id, GL_CONSTANT_ATTENUATION, light.constantAttenuation);
+		glLightf(id, GL_LINEAR_ATTENUATION, light.linearAttenuation);
+		glLightf(id, GL_QUADRATIC_ATTENUATION, light.quadraticAttenuation);
+
+		//The position is already in eye space
+		glLoadIdentity();
+		glLightfv(id, GL_POSITION, &light.position.x);
+		loadModelView();
 	}
 
 	void drawBatch(const VertexTCV* vertices, unsigned vertexCount,

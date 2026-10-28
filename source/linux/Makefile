@@ -231,6 +231,7 @@ SOURCES = \
 	main/profiler.cpp \
 	main/references.cpp \
 	main/tick.cpp \
+	main/capture.cpp \
 	main/console.cpp \
 	main/save_load.cpp \
 	\

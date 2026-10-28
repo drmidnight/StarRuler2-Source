@@ -3,6 +3,7 @@
 #include "render/camera.h"
 #include "render/render_state.h"
 #include "render/vertexBuffer.h"
+#include "main/capture.h"
 #include "render/lighting.h"
 #include "main/references.h"
 #include "main/tick.h"
@@ -60,6 +61,10 @@ To* grabbedCast(From* f) {
 	if(other)
 		other->grab();
 	return other;
+}
+
+static bool isCapturing() {
+	return capture::active();
 }
 
 void takeScreenshot(const std::string& fname, bool increment = true) {
@@ -2153,6 +2158,18 @@ void RegisterRenderBinds(bool decl, bool isMenu, bool server) {
 
 	//-- Sound
 	bind("void getAudioDeviceNames(array<string>& output)", asFUNCTION(getAudioNames));
+
+	//-- Visual parity captures, see main/capture.h
+	if(!server) {
+		bind("bool get_isCapturing()", asFUNCTION(isCapturing))
+			doc("Whether the game was started with --capture.");
+		bind("bool get_resourcesLoaded()", asFUNCTION(capture::resourcesLoaded))
+			doc("Whether all streaming textures, meshes and images have loaded.");
+		bind("void captureFrame(const string& name)", asFUNCTION(capture::request))
+			doc("Writes the next rendered frame to <name>.png in the capture folder.", "");
+		bind("void finishCapture()", asFUNCTION(capture::finish))
+			doc("Ends a capture run and quits.");
+	}
 }
 
 };

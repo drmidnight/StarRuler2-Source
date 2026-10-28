@@ -8,6 +8,7 @@
 #include "main/logging.h"
 #include "main/version.h"
 #include "main/save_load.h"
+#include "main/capture.h"
 #include "main/game_platform.h"
 #include "util/format.h"
 #include "util/save_file.h"
@@ -682,6 +683,16 @@ int main(int argc, char** argv) {
 			else
 				error("Error: load option requires a save name.");
 		}
+		else if(arg == "capture") {
+			++argi;
+			if(argi < argc) {
+				capture::folder = getAbsolutePath(argv[argi]);
+				if(!isDirectory(capture::folder))
+					makeDirectory(capture::folder);
+			}
+			else
+				error("Error: capture option requires a folder.");
+		}
 		else if(arg == "quickstart") {
 			game_state = GS_Game;
 		}
@@ -767,6 +778,8 @@ int main(int argc, char** argv) {
 				"--locale [LANGUAGE]      Start the game in a specific language.\n"
 				"--load [SAVEGAME]        Load the specified savegame on start.\n"
 				"--quickstart             Immediately start a new game, skipping the menu.\n"
+				"--capture [FOLDER]       Render fixed views to PNGs in FOLDER, then quit.\n"
+				"                         Captures the main menu, or views of the --load save.\n"
 				"--watch-resources        Automatically reload certain data files if changed.\n"
 				"--test-scripts           Compile scripts, then exit, logging any errors.\n"
 				"--monitor-scripts        Monitor scripts and run --test-scripts if changed.\n"

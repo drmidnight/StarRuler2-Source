@@ -15,6 +15,7 @@
 #include "render/driver.h"
 #include "save_load.h"
 #include "main/signpost.h"
+#include "main/capture.h"
 #include <cmath>
 #include <stdio.h>
 #include <stdint.h>
@@ -664,6 +665,9 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 		threads::sleep(1);
 	}
 
+	//Captures read the frame back before it is presented
+	capture::afterRender();
+
 	double render_end = devices.driver->getAccurateTime();
 	
 	devices.driver->swapBuffers(maxfps && *maxfps > 0 ? 1.0 / *maxfps : 0.0);
@@ -743,6 +747,7 @@ void tickMenu() {
 	tickGlobal();
 	renderFrame(devices.scripts.menu, devices.scripts.menu);
 	inputTick();
+	capture::tickMenu();
 }
 
 std::unordered_map<std::string, time_t> monitoredFiles;

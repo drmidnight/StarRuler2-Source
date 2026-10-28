@@ -139,4 +139,40 @@ struct Matrix {
 
 		return m;
 	}
+
+	//Same as glOrtho
+	static Matrix ortho(double left, double right, double bottom, double top, double znear, double zfar) {
+		Matrix m;
+		m[0] = 2.0 / (right - left);
+		m[5] = 2.0 / (top - bottom);
+		m[10] = -2.0 / (zfar - znear);
+		m[12] = -(right + left) / (right - left);
+		m[13] = -(top + bottom) / (top - bottom);
+		m[14] = -(zfar + znear) / (zfar - znear);
+		return m;
+	}
+
+	//Same as gluLookAt
+	static Matrix lookAt(const vec3<double>& eye, const vec3<double>& at, const vec3<double>& up) {
+		vec3<double> f = (at - eye).normalized();
+		vec3<double> s = f.cross(up).normalized();
+		vec3<double> u = s.cross(f);
+
+		Matrix m;
+		m[0] = s.x; m[4] = s.y; m[8] = s.z;
+		m[1] = u.x; m[5] = u.y; m[9] = u.z;
+		m[2] = -f.x; m[6] = -f.y; m[10] = -f.z;
+		m[12] = -(s.x * eye.x + s.y * eye.y + s.z * eye.z);
+		m[13] = -(u.x * eye.x + u.y * eye.y + u.z * eye.z);
+		m[14] = f.x * eye.x + f.y * eye.y + f.z * eye.z;
+		return m;
+	}
+
+	static Matrix scale(double x, double y, double z) {
+		Matrix m;
+		m[0] = x;
+		m[5] = y;
+		m[10] = z;
+		return m;
+	}
 };

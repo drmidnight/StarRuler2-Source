@@ -16,6 +16,7 @@
 #include "matrix.h"
 #include "frustum.h"
 #include <algorithm>
+#include <vector>
 extern char lockText[1024];
 
 bool glDirectStateAccess = false;
@@ -126,6 +127,11 @@ public:
 
 	float invView[9];
 
+	//The driver owns the transforms; GL only ever gets them loaded whole.
+	//The model-view stack's top is the current transform, relative to the camera.
+	Matrix projection;
+	std::vector<Matrix> modelView;
+
 	vec3f lightPosition[2];
 	vec2f screenLight[2];
 	double lightRadius[2];
@@ -139,6 +145,7 @@ public:
 		state_2d.depthTest = DT_NoDepthTest;
 		state_2d.baseMat = MAT_Alpha;
 		state_2d.culling = FC_None;
+		modelView.push_back(Matrix());
 	}
 
 	~GLDriver() {
@@ -210,35 +217,56 @@ public:
 		}
 	}
 
+	void loadModelView() {
+		glLoadMatrixd(modelView.back().m);
+	}
+
+	void pushModelView(const Matrix& matrix) {
+		modelView.push_back(matrix);
+		loadModelView();
+	}
+
+	void setProjection(const Matrix& matrix) {
+		projection = matrix;
+		glMatrixMode(GL_PROJECTION);
+		glLoadMatrixd(projection.m);
+		glMatrixMode(GL_MODELVIEW);
+	}
+
+	//Starts a new model-view stack from <view>
+	void setView(const Matrix& view) {
+		modelView.clear();
+		modelView.push_back(view);
+		loadModelView();
+	}
+
 	void setTransformation(const Matrix& matrix) override {
-		glPushMatrix();
 		Matrix temp(matrix);
 		temp[12] -= cam_pos.x;
 		temp[13] -= cam_pos.y;
 		temp[14] -= cam_pos.z;
-		glMultMatrixd(temp.m);
+		pushModelView(modelView.back() * temp);
 	}
 
 	void setTransformationAbs(const Matrix& matrix) override {
-		glPushMatrix();
-		glMultMatrixd(matrix.m);
+		pushModelView(modelView.back() * matrix);
 	}
 	
 	void setTransformationIdentity() override {
-		glPushMatrix();
-		glLoadIdentity();
+		pushModelView(Matrix());
 	}
 
 	void setBBTransform(vec3d pos, double width, double rot) override {
-		glPushMatrix();
 		Matrix m;
 		//BBFacingRot.toTransform(m, pos - cam_pos, vec3d(width * 0.5));
 		(quaterniond::fromAxisAngle(cam_facing, -rot) * BBFacingRot).toTransform(m, pos - cam_pos, vec3d(width * 0.5));
-		glMultMatrixd(m.m);
+		pushModelView(modelView.back() * m);
 	}
 
 	void resetTransformation() override {
-		glPopMatrix();
+		if(modelView.size() > 1)
+			modelView.pop_back();
+		loadModelView();
 	}
 
 	void setDefaultRenderState() {
@@ -1192,12 +1220,9 @@ public:
 			pushScreenClip(*clip);
 
 		//Draw 3D
-		glMatrixMode(GL_PROJECTION);
-		glLoadIdentity();
 		double aspect = ((double)screenSize.x)/((double)screenSize.y);
-		gluPerspective(fov, aspect, zNear, zFar);
+		setProjection(Matrix::projection(fov, aspect, zNear, zFar));
 		camera.setRenderConstraints(zNear, zFar, fov, aspect, (double)screenSize.x, (double)screenSize.y);
-		glMatrixMode(GL_MODELVIEW);
 		{
 
 			vec3d pos, at, lookDir, up;
@@ -1205,8 +1230,7 @@ public:
 
 			lookDir = (at - pos).normalized();
 
-			glLoadIdentity();
-			gluLookAt(0,0,0, lookDir.x, lookDir.y, lookDir.z, up.x, up.y, up.z);
+			setView(Matrix::lookAt(vec3d(), lookDir, up));
 
 			{ //Setup lights in the scene
 				vec3f camPosf(float(pos.x),float(pos.y),float(pos.z));
@@ -1251,10 +1275,9 @@ public:
 				double skyRadius = (zNear + zFar) * 0.5;
 				if(zFar > zNear * 16.0)
 					skyRadius = zNear * 8.0;
-				glPushMatrix();
-				glScaled(skyRadius, skyRadius, skyRadius);
+				pushModelView(modelView.back() * Matrix::scale(skyRadius, skyRadius, skyRadius));
 				skyboxMesh->render();
-				glPopMatrix();
+				resetTransformation();
 			}
 			else {
 				clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1277,12 +1300,8 @@ public:
 		else
 			clear(GL_DEPTH_BUFFER_BIT);
 
-		glMatrixMode(GL_PROJECTION);
-		glLoadIdentity();
-		glOrtho(0,screenSize.x,screenSize.y,0,-4096.0,4096.0);
-
-		glMatrixMode(GL_MODELVIEW);
-		glLoadIdentity();
+		setProjection(Matrix::ortho(0, screenSize.x, screenSize.y, 0, -4096.0, 4096.0));
+		setView(Matrix());
 
 		light::resetLights();
 

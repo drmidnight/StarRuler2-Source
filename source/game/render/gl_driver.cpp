@@ -209,7 +209,6 @@ public:
 	void loadModelView() {
 		builtins.modelView = modelView.back();
 		++builtins.matrixSerial;
-		glLoadMatrixd(builtins.modelView.m);
 	}
 
 	void pushModelView(const Matrix& matrix) {
@@ -220,9 +219,6 @@ public:
 	void setProjection(const Matrix& matrix) {
 		builtins.projection = matrix;
 		++builtins.matrixSerial;
-		glMatrixMode(GL_PROJECTION);
-		glLoadMatrixd(builtins.projection.m);
-		glMatrixMode(GL_MODELVIEW);
 	}
 
 	//Starts a new model-view stack from <view>
@@ -277,10 +273,6 @@ public:
 		setRenderFuncs(MAT_Solid, false);
 		setAlphaTest(MAT_Solid);
 
-		glEnable(GL_LIGHTING);
-
-		glDisable(GL_NORMALIZE);
-		
 		glUnbindProgram();
 
 		for(int i = 0; i < RENDER_MAX_TEXTURES; ++i) {
@@ -297,9 +289,6 @@ public:
 		builtins.materialSpecular = Colorf(1.f, 1.f, 1.f, 1.f);
 		builtins.materialShininess = 8.f;
 		++builtins.materialSerial;
-		glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, (const GLfloat*)&builtins.materialDiffuse);
-		glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, (const GLfloat*)&builtins.materialSpecular);
-		glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, builtins.materialShininess);
 	}
 
 	void set2DRenderState() {
@@ -582,13 +571,6 @@ public:
 			}
 		}
 
-		if(state.normalizeNormals != activeRenderState.normalizeNormals) {
-			if(state.normalizeNormals)
-				glEnable(GL_RESCALE_NORMAL);
-			else
-				glDisable(GL_RESCALE_NORMAL);
-		}
-
 		if(state.drawMode != activeRenderState.drawMode) {
 			switch(state.drawMode) {
 				case DM_Line:
@@ -605,31 +587,21 @@ public:
 			setAlphaTest(state.baseMat);
 		}
 
-		if(!state.shader && (state.lighting != activeRenderState.lighting || activeRenderState.shader)) {
-			if(state.lighting)
-				glEnable(GL_LIGHTING);
-			else
-				glDisable(GL_LIGHTING);
-		}
-
 		if(state.lighting) {
 			//Lighting model material settings
 			if(state.diffuse != builtins.materialDiffuse) {
 				builtins.materialDiffuse = state.diffuse;
 				++builtins.materialSerial;
-				glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, (GLfloat*)&state.diffuse);
 			}
 
 			if(state.specular != builtins.materialSpecular) {
 				builtins.materialSpecular = state.specular;
 				++builtins.materialSerial;
-				glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, (GLfloat*)&state.specular);
 			}
 
 			if(state.shininess != builtins.materialShininess) {
 				builtins.materialShininess = state.shininess;
 				++builtins.materialSerial;
-				glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, state.shininess);
 			}
 		}
 
@@ -1204,18 +1176,15 @@ public:
 		builtins.lights[0].diffuse = Colorf(2.5f, 2.5f, 2.5f, 1.f);
 		builtins.lights[0].specular = Colorf(1.f, 1.f, 1.f, 1.f);
 		builtins.lights[0].quadraticAttenuation = 1.f/(500.f*500.f);
-		applyLight(0);
 
 		builtins.lights[1].enabled = true;
 		builtins.lights[1].diffuse = Colorf(0.f, 0.f, 0.f, 1.f);
 		builtins.lights[1].specular = Colorf(0.f, 0.f, 0.f, 1.f);
 		builtins.lights[1].quadraticAttenuation = 1.f/(500.f*500.f);
-		applyLight(1);
 
 		//System defaults
 		builtins.lightModelAmbient = Colorf(0.175f, 0.175f, 0.175f, 0.f);
 		++builtins.lightSerial;
-		glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (GLfloat*)&builtins.lightModelAmbient);
 
 		if(GLEW_ARB_seamless_cube_map)
 			glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
@@ -1374,7 +1343,6 @@ public:
 		++builtins.lightSerial;
 		if(!desc) {
 			light.enabled = false;
-			glDisable(GL_LIGHT0 + index);
 			return;
 		}
 		light.enabled = true;
@@ -1387,28 +1355,6 @@ public:
 		const float* p = desc->position;
 		for(unsigned i = 0; i < 4; ++i)
 			(&light.position.x)[i] = (float)(m[i] * p[0] + m[4+i] * p[1] + m[8+i] * p[2] + m[12+i] * p[3]);
-		applyLight(index);
-	}
-
-	//Sends the CPU state of a light to GL
-	void applyLight(unsigned index) {
-		auto& light = builtins.lights[index];
-		GLenum id = GL_LIGHT0 + index;
-		if(!light.enabled) {
-			glDisable(id);
-			return;
-		}
-		glEnable(id);
-		glLightfv(id, GL_DIFFUSE, (GLfloat*)&light.diffuse);
-		glLightfv(id, GL_SPECULAR, (GLfloat*)&light.specular);
-		glLightf(id, GL_CONSTANT_ATTENUATION, light.constantAttenuation);
-		glLightf(id, GL_LINEAR_ATTENUATION, light.linearAttenuation);
-		glLightf(id, GL_QUADRATIC_ATTENUATION, light.quadraticAttenuation);
-
-		//The position is already in eye space
-		glLoadIdentity();
-		glLightfv(id, GL_POSITION, &light.position.x);
-		glLoadMatrixd(builtins.modelView.m);
 	}
 
 	void drawBatch(const VertexTCV* vertices, unsigned vertexCount,
@@ -1442,8 +1388,6 @@ public:
 		v[0].pos = vec3f(x,yFrameLine,0);
 		v[1].pos = vec3f((float)location.botRight.x,yFrameLine,0);
 
-		glColor3ub(0,255,0);
-
 		if(frames.size() > 1) {
 			v = buffer->request((unsigned)frames.size() - 1, PT_LineStrip);
 
@@ -1455,7 +1399,6 @@ public:
 			}
 		}
 
-		glColor3ub(255,255,255);
 	}
 
 	void setSkybox(const RenderState* mat) {

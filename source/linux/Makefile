@@ -370,7 +370,7 @@ DEP_FILES = $(addprefix $(OBJDIR)/, $(SOURCES:.cpp=.d))
 ifeq ($(UNAME), Darwin)
 #Objective-C++ for the native window and the Metal renderer, with automatic reference counting
 OBJCFLAGS = -fobjc-arc
-OBJC_SOURCES = os/cocoa_window.mm render/mtl/mtl_driver.mm
+OBJC_SOURCES = os/cocoa_window.mm render/mtl/mtl_driver.mm render/mtl/mtl_texture.mm render/mtl/mtl_shader.mm
 OBJ_FILES += $(addprefix $(OBJDIR)/, $(OBJC_SOURCES:.mm=.o))
 DEP_FILES += $(addprefix $(OBJDIR)/, $(OBJC_SOURCES:.mm=.d))
 endif

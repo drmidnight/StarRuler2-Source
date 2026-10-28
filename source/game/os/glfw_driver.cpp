@@ -384,7 +384,7 @@ public:
 	}
 
 	bool isFullscreen() override {
-		return borderless || glfwGetWindowMonitor(window) != nullptr;
+		return borderless || (window && glfwGetWindowMonitor(window) != nullptr);
 	}
 
 	void setFullscreen(bool fullscreen, int windowedWidth, int windowedHeight) override {

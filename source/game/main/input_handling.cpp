@@ -119,13 +119,9 @@ static bool toggleFullscreen(int key, int keyaction) {
 #endif
 
 	auto& settings = devices.settings.engine;
-	auto* width = settings.getSetting("iResolutionX");
-	auto* height = settings.getSetting("iResolutionY");
-	bool fullscreen = !devices.driver->isFullscreen();
-	devices.driver->setFullscreen(fullscreen, width ? (int)*width : 0, height ? (int)*height : 0);
-
 	if(auto* setting = settings.getSetting("bFullscreen")) {
-		*setting = fullscreen;
+		*setting = !devices.driver->isFullscreen();
+		applyWindowSettings();
 		settings.saveSettings(path_join(getProfileRoot(), "settings.txt"));
 	}
 	return true;

@@ -25,6 +25,8 @@ void cancelLoad();
 
 //Switches over to a different locale
 void switchLocale(const std::string& locale);
+//Switches the open window to the fullscreen setting, if it differs
+void applyWindowSettings();
 
 //Initialize game state variables
 extern bool game_running;

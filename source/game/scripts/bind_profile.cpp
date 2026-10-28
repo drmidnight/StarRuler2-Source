@@ -232,6 +232,7 @@ const std::string& getSetting_str(const std::string& name) {
 }
 
 void applySettings() {
+	applyWindowSettings();
 	if(game_running && devices.scripts.client) {
 		scripts::MultiCall cl = devices.scripts.client->call(SC_settings_changed);
 		cl.call();

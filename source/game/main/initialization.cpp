@@ -389,6 +389,18 @@ void loadLocales(std::string folder, mods::Mod* mod) {
 		devices.locale.load(file->second);
 }
 
+void applyWindowSettings() {
+	auto& settings = devices.settings.engine;
+	auto* fullscreen = settings.getSetting("bFullscreen");
+	if(!fullscreen || !devices.driver || (bool)*fullscreen == devices.driver->isFullscreen())
+		return;
+
+	//A windowed size of 0 is the desktop size
+	auto* width = settings.getSetting("iResolutionX");
+	auto* height = settings.getSetting("iResolutionY");
+	devices.driver->setFullscreen(*fullscreen, width ? (int)*width : 0, height ? (int)*height : 0);
+}
+
 void switchLocale(const std::string& locale) {
 	devices.locale.clear();
 	foreach(m, devices.mods.activeMods)

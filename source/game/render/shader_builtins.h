@@ -35,10 +35,14 @@ struct BuiltinState {
 	int alphaTest;
 	float alphaRef;
 
+	//Multiplies clip-space y; -1 flips drawing for render targets stored upside down.
+	//It counts as matrix state.
+	float flipY;
+
 	unsigned matrixSerial, lightSerial, materialSerial;
 
 	BuiltinState() : materialShininess(0.f), fixedLighting(0), fixedTexture(0),
-		alphaTest(0), alphaRef(1.f/255.f), matrixSerial(1), lightSerial(1), materialSerial(1) {
+		alphaTest(0), alphaRef(1.f/255.f), flipY(1.f), matrixSerial(1), lightSerial(1), materialSerial(1) {
 		//GL's initial state
 		for(unsigned i = 0; i < MAX_LIGHTS; ++i) {
 			auto& light = lights[i];

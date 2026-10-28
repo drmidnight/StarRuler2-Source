@@ -74,7 +74,7 @@ public:
 		GLint ambient, diffuse, specular, position;
 		GLint constantAttenuation, linearAttenuation, quadraticAttenuation;
 	};
-	GLint modelView, projection, modelViewProjection, normalMatrix, projectionInverse;
+	GLint modelView, projection, modelViewProjection, normalMatrix, projectionInverse, flipY;
 	LightLocations lights[MAX_LIGHTS];
 	GLint materialEmission, materialAmbient, materialDiffuse, materialSpecular, materialShininess;
 	GLint lightModelAmbient, lightEnabled;
@@ -117,8 +117,9 @@ public:
 		modelViewProjection = find("sr_ModelViewProjection");
 		normalMatrix = find("sr_NormalMatrix");
 		projectionInverse = find("sr_ProjectionInverse");
+		flipY = find("sr_FlipY");
 		usesMatrices = modelView >= 0 || projection >= 0 || modelViewProjection >= 0
-			|| normalMatrix >= 0 || projectionInverse >= 0;
+			|| normalMatrix >= 0 || projectionInverse >= 0 || flipY >= 0;
 
 		usesLights = false;
 		for(unsigned i = 0; i < MAX_LIGHTS; ++i) {
@@ -187,6 +188,8 @@ public:
 					n[i] = (float)(c[i] * scale);
 				glUniformMatrix3fv(normalMatrix, 1, GL_FALSE, n);
 			}
+			if(flipY >= 0)
+				glUniform1f(flipY, state.flipY);
 			if(projectionInverse >= 0) {
 				double inv[16];
 				if(invertMatrix(state.projection.m, inv))

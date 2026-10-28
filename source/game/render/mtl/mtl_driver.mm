@@ -229,7 +229,8 @@ public:
 		encoder = [commandBuffer renderCommandEncoderWithDescriptor:pass];
 		clearColor = clearDepth = false;
 
-		[encoder setFrontFacingWinding:MTLWindingCounterClockwise];
+		//A flipped target reverses the winding of everything drawn into it
+		[encoder setFrontFacingWinding:target ? MTLWindingClockwise : MTLWindingCounterClockwise];
 		[encoder setViewport:(MTLViewport){0, 0, (double)color.width, (double)color.height, 0, 1}];
 		applyClip(color.width, color.height);
 		return true;
@@ -245,6 +246,10 @@ public:
 	void presentFrame() override {
 		renderVertexBuffers();
 		target = nullptr;
+		if(builtins.flipY != 1.f) {
+			builtins.flipY = 1.f;
+			++builtins.matrixSerial;
+		}
 		//Even a frame that drew nothing on screen has to present a drawable
 		beginPass();
 		endPass();
@@ -292,6 +297,9 @@ public:
 			if(y < 0) { h += y; y = 0; }
 			w = std::max(0l, std::min(w, (long)width - x));
 			h = std::max(0l, std::min(h, (long)height - y));
+			//Render targets are drawn flipped, so the clip is too
+			if(target)
+				y = (long)height - y - h;
 			rect = {(NSUInteger)x, (NSUInteger)y, (NSUInteger)w, (NSUInteger)h};
 		}
 		[encoder setScissorRect:rect];
@@ -311,6 +319,13 @@ public:
 		renderVertexBuffers();
 		endPass();
 		target = dynamic_cast<RenderTarget*>(texture);
+		//Metal stores render targets top row first; GL stored them bottom row first.
+		//Flipping clip space keeps their contents the way GL had them.
+		float flip = target ? -1.f : 1.f;
+		if(builtins.flipY != flip) {
+			builtins.flipY = flip;
+			++builtins.matrixSerial;
+		}
 		if(target) {
 			//GL cleared render targets when they were bound
 			clearColor = clearDepth = true;

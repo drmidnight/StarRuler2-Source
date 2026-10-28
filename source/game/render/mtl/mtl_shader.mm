@@ -210,6 +210,8 @@ void ShaderProgram::updateBuiltins(const BuiltinState& state) {
 				n[i] = (float)(c[i] * scale);
 			write(*u, n, 3, 1, 3);
 		}
+		if(auto* u = findUniform("sr_FlipY"))
+			write(*u, &state.flipY, 1, 1);
 		if(auto* u = findUniform("sr_ProjectionInverse")) {
 			double inv[16];
 			if(invertMatrix(state.projection.m, inv)) {

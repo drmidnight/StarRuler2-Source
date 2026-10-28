@@ -80,8 +80,10 @@ static const Mapping mappings[] = {
 	{"textureCube", "sr_textureCube", D_textureCube, MF_Stages | MF_Core},
 	{"texture2DLod", "sr_texture2DLod", D_texture2DLod, MF_Stages | MF_Core},
 	{"textureCubeLod", "sr_textureCubeLod", D_textureCubeLod, MF_Stages | MF_Core},
-	//The fragment shader's main is wrapped to apply the alpha test
+	//The fragment shader's main is wrapped to apply the alpha test, and the core
+	//vertex shader's to flip clip space for APIs whose render targets are upside down
 	{"main", "sr_main", D_main, MF_Fragment | MF_Targets},
+	{"main", "sr_main", D_main, MF_Vertex | MF_Core},
 };
 
 //Built-ins that GLSL 1.20 provides without fixed-function state
@@ -291,7 +293,18 @@ static void declare(std::string& out, unsigned used, ShaderStage stage, ShimTarg
 		out += "uniform float sr_AlphaRef;\n";
 		out += "void sr_main();\n";
 	}
+	else if(core) {
+		out += "uniform float sr_FlipY;\n";
+		out += "void sr_main();\n";
+	}
 }
+
+//Runs the vertex shader, then flips clip space when the backend asks for it
+static const char* flipYMain =
+	"\nvoid main() {\n"
+	"\tsr_main();\n"
+	"\tgl_Position.y *= sr_FlipY;\n"
+	"}\n";
 
 //Runs the shader, then applies the alpha test GL did after it
 static std::string alphaTestMain(const char* fragColor) {
@@ -460,6 +473,8 @@ static bool shimStage(const std::string& source, ShaderStage stage, ShimTarget t
 	output += body;
 	if(stage == SS_Fragment)
 		output += alphaTestMain(core ? "sr_FragColor" : "gl_FragColor");
+	else if(core)
+		output += flipYMain;
 
 	problems.clear();
 	for(auto& name : unsupported) {

@@ -42,8 +42,6 @@ namespace render {
 			vertBuffer.push_back(vertBuffer.front());
 			vertBuffer.pop_front();
 
-			//Shaders read the generic attributes, and drawing without one reads the
-			//fixed-function arrays, so both point at the same data
 			glDisableVertexAttribArray(SA_Normal);
 			glDisableVertexAttribArray(SA_Tangent);
 			glDisableVertexAttribArray(SA_UV2);
@@ -55,14 +53,6 @@ namespace render {
 			glVertexAttribPointer(SA_Vertex, 3, GL_FLOAT, GL_FALSE, sizeof(VertexTCV), (void*)offsetof(VertexTCV, pos));
 			glVertexAttribPointer(SA_UV, 2, GL_FLOAT, GL_FALSE, sizeof(VertexTCV), (void*)offsetof(VertexTCV, uv));
 			glVertexAttribPointer(SA_Color, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(VertexTCV), (void*)offsetof(VertexTCV, col));
-
-			glEnableClientState(GL_VERTEX_ARRAY);
-			glEnableClientState(GL_COLOR_ARRAY);
-			glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-
-			glTexCoordPointer(2, GL_FLOAT, sizeof(VertexTCV), (void*)offsetof(VertexTCV, uv));
-			glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(VertexTCV), (void*)offsetof(VertexTCV, col));
-			glVertexPointer(3, GL_FLOAT, sizeof(VertexTCV), (void*)offsetof(VertexTCV, pos));
 		}
 
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, indexCount * sizeof(unsigned short),

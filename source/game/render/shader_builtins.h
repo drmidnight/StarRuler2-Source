@@ -26,9 +26,15 @@ struct BuiltinState {
 	float materialShininess;
 	Colorf lightModelAmbient;
 
+	//Read by the FixedFunction shader, which stands in when a material has none:
+	//whether to light vertices, and 0 for no texture, 1 for a colour texture or
+	//2 for an alpha-only one. They count as material state.
+	int fixedLighting, fixedTexture;
+
 	unsigned matrixSerial, lightSerial, materialSerial;
 
-	BuiltinState() : materialShininess(0.f), matrixSerial(1), lightSerial(1), materialSerial(1) {
+	BuiltinState() : materialShininess(0.f), fixedLighting(0), fixedTexture(0),
+		matrixSerial(1), lightSerial(1), materialSerial(1) {
 		//GL's initial state
 		for(unsigned i = 0; i < MAX_LIGHTS; ++i) {
 			auto& light = lights[i];

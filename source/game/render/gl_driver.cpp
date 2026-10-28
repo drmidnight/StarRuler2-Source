@@ -643,16 +643,65 @@ public:
 			}
 		}
 
-		//Shader and shader variables
-		if(state.shader == 0 && activeRenderState.shader != 0)
-			glUnbindProgram();
-
 		activeRenderState = state;
 		pLastRenderState = &state;
 		
 		//The shader bind can inspect the current material
 		if(state.shader)
 			state.shader->bind(shaderUniforms);
+		else
+			bindFixedFunction(state);
+	}
+
+	//The shader that stands in for fixed-function GL. The driver owns it, so it
+	//outlives library reloads; it compiles on first use.
+	Shader* fixedFunction = nullptr;
+	bool fixedFunctionFailed = false;
+
+	const Shader* getFixedFunction() {
+		if(fixedFunction || fixedFunctionFailed)
+			return fixedFunction;
+
+		std::string vertex = devices.mods.resolve("data/shaders/source/fixed_function_vs.txt");
+		std::string fragment = devices.mods.resolve("data/shaders/source/fixed_function_ps.txt");
+		auto* program = createShaderProgram(vertex.c_str(), fragment.c_str());
+		auto* shader = createShader();
+		shader->program = program;
+		if(program->compile() != 0 || shader->compile() != 0) {
+			error("Could not compile the FixedFunction shader; drawing without one");
+			delete shader;
+			delete program;
+			fixedFunctionFailed = true;
+			return nullptr;
+		}
+		fixedFunction = shader;
+		return fixedFunction;
+	}
+
+	//Draws <state>, which has no shader of its own, with the FixedFunction shader
+	void bindFixedFunction(const RenderState& state) {
+		int lighting = state.lighting ? 1 : 0;
+		int texture = 0;
+		if(Texture* tex = state.textures[0])
+			if(tex->type == TT_2D)
+				texture = tex->alphaOnly ? 2 : 1;
+		if(lighting != builtins.fixedLighting || texture != builtins.fixedTexture) {
+			builtins.fixedLighting = lighting;
+			builtins.fixedTexture = texture;
+			++builtins.materialSerial;
+		}
+
+		if(auto* shader = getFixedFunction())
+			shader->bind(nullptr);
+		else
+			glUnbindProgram();
+	}
+
+	//Every draw needs a program; draws after setDefaultRenderState have none yet
+	void prepareDraw() {
+		if(!glProgramBound())
+			bindFixedFunction(activeRenderState);
+		glUploadBuiltins(builtins);
 	}
 
 	void getBillboardVecs(vec3d& upLeft, vec3d& upRight, double rotation) const {
@@ -1449,7 +1498,7 @@ RenderDriver* createGLDriver() {
 }
 
 void glPrepareDraw() {
-	glUploadBuiltins(((GLDriver*)devices.render)->builtins);
+	((GLDriver*)devices.render)->prepareDraw();
 }
 
 };

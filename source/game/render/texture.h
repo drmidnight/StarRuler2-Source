@@ -17,6 +17,8 @@ public:
 	vec2i size;
 	bool loaded;
 	bool hasMipMaps;
+	//Holds only alpha, which fixed-function texturing treats differently
+	bool alphaOnly = false;
 	mutable RenderState prevRenderState;
 
 	virtual bool isPixelActive(vec2i px) const = 0;

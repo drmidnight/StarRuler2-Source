@@ -173,7 +173,8 @@ public:
 	GLint modelView, projection, modelViewProjection, normalMatrix, projectionInverse;
 	LightLocations lights[MAX_LIGHTS];
 	GLint materialEmission, materialAmbient, materialDiffuse, materialSpecular, materialShininess;
-	GLint lightModelAmbient;
+	GLint lightModelAmbient, lightEnabled;
+	GLint fixedLighting, fixedTexture;
 	bool usesMatrices, usesLights, usesMaterial;
 	unsigned matrixSerial, lightSerial, materialSerial;
 
@@ -231,7 +232,8 @@ public:
 					usesLights = true;
 		}
 		lightModelAmbient = find("sr_LightModel.ambient");
-		if(lightModelAmbient >= 0)
+		lightEnabled = find("sr_LightEnabled");
+		if(lightModelAmbient >= 0 || lightEnabled >= 0)
 			usesLights = true;
 
 		materialEmission = find("sr_FrontMaterial.emission");
@@ -239,8 +241,10 @@ public:
 		materialDiffuse = find("sr_FrontMaterial.diffuse");
 		materialSpecular = find("sr_FrontMaterial.specular");
 		materialShininess = find("sr_FrontMaterial.shininess");
+		fixedLighting = find("sr_FixedLighting");
+		fixedTexture = find("sr_FixedTexture");
 		usesMaterial = materialEmission >= 0 || materialAmbient >= 0 || materialDiffuse >= 0
-			|| materialSpecular >= 0 || materialShininess >= 0;
+			|| materialSpecular >= 0 || materialShininess >= 0 || fixedLighting >= 0 || fixedTexture >= 0;
 
 		matrixSerial = lightSerial = materialSerial = 0;
 	}
@@ -306,6 +310,12 @@ public:
 			}
 			if(lightModelAmbient >= 0)
 				uniformColor(lightModelAmbient, state.lightModelAmbient);
+			if(lightEnabled >= 0) {
+				GLint enabled[MAX_LIGHTS];
+				for(unsigned i = 0; i < MAX_LIGHTS; ++i)
+					enabled[i] = state.lights[i].enabled ? 1 : 0;
+				glUniform1iv(lightEnabled, MAX_LIGHTS, enabled);
+			}
 		}
 
 		if(usesMaterial && materialSerial != state.materialSerial) {
@@ -320,6 +330,10 @@ public:
 				uniformColor(materialSpecular, state.materialSpecular);
 			if(materialShininess >= 0)
 				glUniform1f(materialShininess, state.materialShininess);
+			if(fixedLighting >= 0)
+				glUniform1i(fixedLighting, state.fixedLighting);
+			if(fixedTexture >= 0)
+				glUniform1i(fixedTexture, state.fixedTexture);
 		}
 	}
 
@@ -1132,6 +1146,10 @@ void glUnbindProgram() {
 		boundProgramID = 0;
 	}
 	boundProgram = nullptr;
+}
+
+bool glProgramBound() {
+	return boundProgram != nullptr;
 }
 
 void glUploadBuiltins(const BuiltinState& state) {

@@ -189,6 +189,7 @@ void GLTexture::loadStart(Image& image, bool mipmap, bool cachePixels, unsigned 
 		size = vec2i(image.width, image.height);
 
 		pixelDepth = ColorDepths[image.format];
+		alphaOnly = image.format == FMT_Alpha;
 
 		if(cachePixels)
 			activePixels.resize(size.x * size.y);

@@ -406,6 +406,15 @@ test_threads: makelibs
 	@$(CC) $(CXXFLAGS) source/os/test/threads_test.cpp $(LIBDIR)/libos.a -lpthread -o $(BINDIR)/test_threads
 	$(BINDIR)/test_threads
 
+#Translates every shader to Metal and reports failures; see source/tools/shadertool
+SHADERTOOL_SOURCES = source/tools/shadertool/main.cpp source/game/render/shader_shim.cpp \
+	source/game/render/shader_translate.cpp
+shadertool: $(SHADERTOOL_SOURCES)
+	@mkdir -p $(BINDIR)
+	@$(CC) $(CXXFLAGS) $(LDFLAGS) $(SHADERTOOL_SOURCES) -lglslang -lglslang-default-resource-limits \
+		-lspirv-cross-msl -lspirv-cross-glsl -lspirv-cross-core -o $(BINDIR)/shadertool
+	$(BINDIR)/shadertool
+
 makelibs:
 	@mkdir -p $(BINDIR)
 	@$(MAKE) -s -f ./source/os/gcc/Makefile compile

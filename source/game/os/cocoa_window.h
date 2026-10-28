@@ -19,5 +19,6 @@ bool lastScrollWasPrecise();
 //Covers the window's screen with the window, above the menu bar and dock, without
 //changing the display mode. The window steps back while another application is in front.
 void enterBorderlessFullscreen(GLFWwindow* window);
+void leaveBorderlessFullscreen();
 
 };

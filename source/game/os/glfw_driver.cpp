@@ -88,10 +88,12 @@ public:
 
 	bool mouseOver;
 	bool canLock, shouldLock;
+	//Whether the window covers the screen without owning the monitor
+	bool borderless;
 
 	double frameTime, gameTime, gameSpeed;
 
-	GLFWDriver() : window(0), mouseOver(true), canLock(false), shouldLock(false) {
+	GLFWDriver() : window(0), mouseOver(true), canLock(false), shouldLock(false), borderless(false) {
 		glfwSetErrorCallback(glfwError);
 		glfwInit();
 		resetTimer();
@@ -184,7 +186,7 @@ public:
 		glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_FALSE);
 
 		GLFWmonitor* monitor = nullptr;
-		bool borderless = false;
+		borderless = false;
 		if(data.mode == WM_Fullscreen) {
 			monitor = glfwGetPrimaryMonitor();
 
@@ -360,6 +362,71 @@ public:
 		glfwRequestWindowAttention(window);
 	}
 
+	//The monitor that holds most of the window
+	GLFWmonitor* getWindowMonitor() {
+		if(GLFWmonitor* monitor = glfwGetWindowMonitor(window))
+			return monitor;
+		int wx, wy, ww, wh;
+		glfwGetWindowPos(window, &wx, &wy);
+		glfwGetWindowSize(window, &ww, &wh);
+		int cx = wx + ww / 2, cy = wy + wh / 2;
+
+		int count = 0;
+		GLFWmonitor** monitors = glfwGetMonitors(&count);
+		for(int i = 0; i < count; ++i) {
+			int mx, my;
+			glfwGetMonitorPos(monitors[i], &mx, &my);
+			const GLFWvidmode* mode = glfwGetVideoMode(monitors[i]);
+			if(mode && cx >= mx && cx < mx + mode->width && cy >= my && cy < my + mode->height)
+				return monitors[i];
+		}
+		return glfwGetPrimaryMonitor();
+	}
+
+	bool isFullscreen() override {
+		return borderless || glfwGetWindowMonitor(window) != nullptr;
+	}
+
+	void setFullscreen(bool fullscreen, int windowedWidth, int windowedHeight) override {
+		if(!window || fullscreen == isFullscreen())
+			return;
+		GLFWmonitor* monitor = getWindowMonitor();
+		if(fullscreen) {
+#ifdef __APPLE__
+			borderless = true;
+			glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_FALSE);
+			enterBorderlessFullscreen(window);
+#else
+			const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+			glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+#endif
+			return;
+		}
+
+		//Centre the window in the part of the monitor that isn't menu bar or dock
+		int ax, ay, aw, ah;
+		glfwGetMonitorWorkarea(monitor, &ax, &ay, &aw, &ah);
+		//A size of 0 means the desktop size, which for a window is all of that area
+		if(windowedWidth <= 0 || windowedWidth > aw)
+			windowedWidth = aw;
+		if(windowedHeight <= 0 || windowedHeight > ah)
+			windowedHeight = ah;
+		int x = ax + std::max(aw - windowedWidth, 0) / 2;
+		int y = ay + std::max(ah - windowedHeight, 0) / 2;
+		if(borderless) {
+#ifdef __APPLE__
+			leaveBorderlessFullscreen();
+#endif
+			borderless = false;
+			glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_TRUE);
+			glfwSetWindowSize(window, windowedWidth, windowedHeight);
+			glfwSetWindowPos(window, x, y);
+		}
+		else {
+			glfwSetWindowMonitor(window, nullptr, x, y, windowedWidth, windowedHeight, 0);
+		}
+	}
+	
 	bool isMouseOver() {
 		return mouseOver;
 	}
@@ -538,6 +605,7 @@ public:
 #ifdef __APPLE__
 		detachCocoaWindow();
 #endif
+		borderless = false;
 		glfwDestroyWindow(window);
 	}
 };
@@ -557,6 +625,7 @@ void redirectSpecialKey(GLFWwindow*, int key, int scan, int action, int mods) {
 	driver->shiftKey = (mods & GLFW_MOD_SHIFT) != 0;
 	driver->ctrlKey = (mods & GLFW_MOD_CONTROL) != 0;
 	driver->altKey = (mods & GLFW_MOD_ALT) != 0;
+	driver->superKey = (mods & GLFW_MOD_SUPER) != 0;
 
 	bool pressed;
 	int keyaction;
@@ -591,6 +660,11 @@ void redirectSpecialKey(GLFWwindow*, int key, int scan, int action, int mods) {
 		case GLFW_KEY_LEFT_ALT:
 		case GLFW_KEY_RIGHT_ALT:
 			driver->altKey = pressed;
+		break;
+
+		case GLFW_KEY_LEFT_SUPER:
+		case GLFW_KEY_RIGHT_SUPER:
+			driver->superKey = pressed;
 		break;
 	}
 

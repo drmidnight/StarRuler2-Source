@@ -125,4 +125,12 @@ void enterBorderlessFullscreen(GLFWwindow* glfwWindow) {
 		}];
 }
 
+void leaveBorderlessFullscreen() {
+	removeObserver(becomeKeyObserver);
+	removeObserver(resignKeyObserver);
+	removeObserver(moveObserver);
+	if(nativeWindow)
+		coverScreen(nativeWindow, false);
+}
+
 };

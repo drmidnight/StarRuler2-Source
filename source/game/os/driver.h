@@ -148,6 +148,8 @@ public:
 	DriverCallbacks_2<int,int> onResize, onMouseButton, onMouseMoved, onKeyEvent;
 
 	bool shiftKey, altKey, ctrlKey;
+	//Command on macOS
+	bool superKey;
 	int win_width, win_height;
 
 	int mouse_x, mouse_y;
@@ -172,6 +174,10 @@ public:
 	virtual bool isWindowMinimized() = 0;
 	virtual bool isMouseOver() = 0;
 	virtual void flashWindow() = 0;
+	virtual bool isFullscreen() = 0;
+	//Switches the open window between fullscreen at the desktop resolution, and a
+	//window of the given size
+	virtual void setFullscreen(bool fullscreen, int windowedWidth, int windowedHeight) = 0;
 	virtual void getVideoModes(std::vector<VideoMode>& output) = 0;
 	virtual void getMonitorNames(std::vector<std::string>& output) = 0;
 
@@ -214,7 +220,7 @@ public:
 	virtual int getCharForKey(int key) = 0;
 	virtual int getKeyForChar(unsigned char chr) = 0;
 
-	OSDriver() : shiftKey(false), altKey(false), ctrlKey(false),
+	OSDriver() : shiftKey(false), altKey(false), ctrlKey(false), superKey(false),
 			win_width(0), win_height(0), mouse_x(0), mouse_y(0),
 			leftButton(false), rightButton(false), middleButton(false), preciseScroll(false) {}
 	virtual ~OSDriver() {}

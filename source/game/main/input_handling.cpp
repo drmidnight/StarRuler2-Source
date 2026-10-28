@@ -4,6 +4,8 @@
 #include "main/tick.h"
 #include "main/console.h"
 #include "os/driver.h"
+#include "files.h"
+#include "str_util.h"
 #include <set>
 
 #include "processing.h"
@@ -103,8 +105,37 @@ void clearPressedKeys() {
 	pressedKeys.clear();
 }
 
+//Cmd+Enter on macOS and Alt+Enter elsewhere switch between fullscreen and a window,
+//and keep the choice for the next start
+static bool toggleFullscreen(int key, int keyaction) {
+	if(key != os::KEY_ENTER || keyaction != os::KA_Pressed)
+		return false;
+#ifdef __APPLE__
+	if(!devices.driver->superKey)
+		return false;
+#else
+	if(!devices.driver->altKey)
+		return false;
+#endif
+
+	auto& settings = devices.settings.engine;
+	auto* width = settings.getSetting("iResolutionX");
+	auto* height = settings.getSetting("iResolutionY");
+	bool fullscreen = !devices.driver->isFullscreen();
+	devices.driver->setFullscreen(fullscreen, width ? (int)*width : 0, height ? (int)*height : 0);
+
+	if(auto* setting = settings.getSetting("bFullscreen")) {
+		*setting = fullscreen;
+		settings.saveSettings(path_join(getProfileRoot(), "settings.txt"));
+	}
+	return true;
+}
+
 bool onKeyEvent(int key, int keyaction) {
 	bool pressed = keyaction & os::KA_Pressed;
+
+	if(toggleFullscreen(key, keyaction))
+		return true;
 
 	//Figure out if the modifier mask was changed
 	switch(key) {

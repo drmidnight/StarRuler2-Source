@@ -24,6 +24,9 @@ namespace render {
 unsigned drawCalls = 0;
 
 extern const RenderMesh* lastRenderedMesh;
+void glDrawBatch(const VertexTCV* vertices, unsigned vertexCount,
+	const unsigned short* indices, unsigned indexCount,
+	const RenderStep* steps, unsigned stepCount);
 float* shaderUniforms = 0;
 
 bool alphaTest = false, blend = false;
@@ -1286,6 +1289,12 @@ public:
 		switchToRenderState(state_2d);
 		if(!intermediateBlend)
 			cleared = false;
+	}
+
+	void drawBatch(const VertexTCV* vertices, unsigned vertexCount,
+		const unsigned short* indices, unsigned indexCount,
+		const RenderStep* steps, unsigned stepCount) override {
+		glDrawBatch(vertices, vertexCount, indices, indexCount, steps, stepCount);
 	}
 
 	void drawFPSGraph(const recti& location) {

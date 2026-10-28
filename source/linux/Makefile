@@ -263,6 +263,7 @@ SOURCES = \
 	render/gl_shader.cpp \
 	render/gl_texture.cpp \
 	render/gl_vertexBuffer.cpp \
+	render/vertexBuffer.cpp \
 	render/lighting.cpp \
 	render/obj_loader.cpp \
 	render/ogex_loader.cpp \

@@ -3,7 +3,6 @@
 #include "vec2.h"
 #include "color.h"
 #include <vector>
-#include <deque>
 
 namespace scene {
 	class Node;
@@ -80,7 +79,6 @@ namespace render {
 
 	class VertexBufferTCV {
 		RenderStep* last;
-		std::deque<unsigned> vertBuffer, indBuffer;
 		std::vector<VertexTCV> vertices;
 		std::vector<unsigned short> indices;
 		std::vector<RenderStep> steps;

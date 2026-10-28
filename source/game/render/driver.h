@@ -27,6 +27,8 @@ namespace render {
 	};
 
 	class Camera;
+	struct VertexTCV;
+	struct RenderStep;
 
 class RenderDriver {
 public:
@@ -85,6 +87,11 @@ public:
 	virtual void setRenderTarget(Texture* texture, bool intermediate = false) = 0;
 
 	virtual Image* getScreen(int x, int y, int w, int h) = 0;
+
+	//Uploads a batch of vertices and draws each step with its render state
+	virtual void drawBatch(const VertexTCV* vertices, unsigned vertexCount,
+		const unsigned short* indices, unsigned indexCount,
+		const RenderStep* steps, unsigned stepCount) = 0;
 
 	virtual void drawFPSGraph(const recti& location) = 0;
 

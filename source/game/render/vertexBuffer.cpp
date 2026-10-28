@@ -4,7 +4,8 @@
 #include "compat/misc.h"
 #include <string.h>
 
-const unsigned maxVerts = 2048, maxInds = 4096;
+//Indices are 16 bit, so a batch must stay well under 65536 vertices
+const unsigned maxVerts = 16384, maxInds = 32768;
 
 unsigned drawnSteps = 0, bufferFlushes = 0;
 

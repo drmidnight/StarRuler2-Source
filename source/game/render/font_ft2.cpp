@@ -59,11 +59,13 @@ public:
 	std::vector<render::RenderState*> textures;
 
 	struct Glyph {
-		unsigned short x : 16, y : 16;
-		bool draw : 1;
-		unsigned char page : 7;
-		unsigned char w : 8, h : 8;
-		char wOff : 8, hOff : 8;
+		//Position, size and offset of the bitmap in pixels
+		unsigned short x, y;
+		bool draw;
+		unsigned char page;
+		unsigned short w, h;
+		short wOff, hOff;
+		//Advance in points
 		float xAdv;
 		int glyph_index;
 	};
@@ -83,7 +85,22 @@ public:
 	std::vector<GlyphEntry> hiChars;
 
 	double x_scale, y_scale;
+	//Line height and baseline in points
 	unsigned glyphHeight, baseLine, textureHeight, textureWidth;
+	//Glyph pixels per point
+	float density;
+
+	//Kerning between two glyphs in points
+	float kerning(int lastGlyph, int glyph) const {
+		FT_Vector kern;
+		FT_Get_Kerning(*face, lastGlyph, glyph, 0/*FT_KERNING_UNFITTED*/, &kern);
+		return (float)kern.x / (64.f * density);
+	}
+
+	rectf glyphArea(const Glyph& glyph, float x, float y) const {
+		return rectf::area(vec2f(x + (float)glyph.wOff / density, y + (float)glyph.hOff / density),
+			vec2f((float)glyph.w / density, (float)glyph.h / density));
+	}
 
 	void draw(render::RenderDriver* driver, const char* text, int X, int Y, const Color* color, const recti* clip = 0) const {
 		float x = (float)X, y = (float)Y;
@@ -134,19 +151,14 @@ public:
 					lastC = 0;
 				}
 				else {
-					if(lastC) {
-						FT_Vector kerning;
-						FT_Get_Kerning(*face, lastC, glyph.glyph_index, 0/*FT_KERNING_UNFITTED*/, &kerning);
-						
-						if(kerning.x != 0)
-							x += ((float)kerning.x) / 64.f;
-					}
+					if(lastC)
+						x += kerning(lastC, glyph.glyph_index);
 
 					lastC = glyph.glyph_index;
 				}
 
 				if(glyph.draw) {
-					rectf pos = rectf::area(vec2f(x + (float)glyph.wOff, y + (float)glyph.hOff), vec2f(glyph.w, glyph.h));
+					rectf pos = glyphArea(glyph, x, y);
 					rectf source = rectf::area(vec2f((float)glyph.x * xFactor, (float)glyph.y * yFactor),
 										vec2f((float)glyph.w * xFactor, (float)glyph.h * yFactor));
 
@@ -208,19 +220,14 @@ public:
 			lastC = 0;
 		}
 		else {
-			if(lastC) {
-				FT_Vector kerning;
-				FT_Get_Kerning(*face, lastC, glyph.glyph_index, 0, &kerning);
-				
-				if(kerning.x != 0)
-					x += ((float)kerning.x) / 64.f;
-			}
+			if(lastC)
+				x += kerning(lastC, glyph.glyph_index);
 
 			lastC = glyph.glyph_index;
 		}
 
 		if(glyph.draw) {
-			rectf pos = rectf::area(vec2f(x + glyph.wOff, y + glyph.hOff), vec2f(glyph.w, glyph.h));
+			rectf pos = glyphArea(glyph, x, y);
 			rectf source = rectf::area(vec2f((float)glyph.x * xFactor, (float)glyph.y * yFactor),
 								vec2f((float)glyph.w * xFactor, (float)glyph.h * yFactor));
 
@@ -234,20 +241,21 @@ public:
 
 	vec2i getDimension(const char* text) const {
 		vec2i dim(0, glyphHeight);
+		//Advances are fractional, so the width adds up the way draw() places glyphs
+		float width = 0.f, maxWidth = 0.f;
 
 		FT_Activate_Size(size);
 
 		fontChar lastC = 0;
 		u8it it(text);
-		unsigned maxWidth = 0;
 
 		while(fontChar c = it++) {
 			const Glyph* glyph = 0;
 
 			if(c == L'\n') {
-				if(dim.x > (int)maxWidth)
-					maxWidth = dim.x;
-				dim.x = 0;
+				if(width > maxWidth)
+					maxWidth = width;
+				width = 0.f;
 				dim.y += glyphHeight;
 			}
 			else if(c <= 0xff) {
@@ -262,23 +270,19 @@ public:
 			}
 
 			if(glyph) {
-				dim.x += (int)glyph->xAdv;
+				width += glyph->xAdv;
 
 				//Don't kern anything involving digits
 				if(c < '0' || c > '9') {
-					if(lastC) {
-						FT_Vector kerning;
-						FT_Get_Kerning(*face, lastC, glyph->glyph_index, 0, &kerning);
-						
-						if(kerning.x != 0)
-							dim.x += (unsigned)(kerning.x >> 6);
-					}
+					if(lastC)
+						width += kerning(lastC, glyph->glyph_index);
 				}
 			}
 		}
 
-		if(dim.x < (int)maxWidth)
-			dim.x = maxWidth;
+		if(width < maxWidth)
+			width = maxWidth;
+		dim.x = (int)ceilf(width);
 		return dim;
 	}
 
@@ -301,18 +305,14 @@ public:
 		}
 
 		if(glyph) {
-			dim.x += (int)glyph->xAdv;
+			float width = glyph->xAdv;
 
 			//Don't kern anything involving digits
 			if(c < '0' || c > '9') {
-				if(lastC) {
-					FT_Vector kerning;
-					FT_Get_Kerning(*face, lastC, glyph->glyph_index, 0, &kerning);
-					
-					if(kerning.x != 0)
-						dim.x += (unsigned)(kerning.x >> 6);
-				}
+				if(lastC)
+					width += kerning(lastC, glyph->glyph_index);
 			}
+			dim.x = (int)width;
 		}
 
 		return dim;
@@ -327,7 +327,7 @@ public:
 	}
 
 	FontFT2()
-		: lowChars(new Glyph[256]), glyphHeight(0), baseLine(0), textureHeight(1), textureWidth(1)
+		: lowChars(new Glyph[256]), glyphHeight(0), baseLine(0), textureHeight(1), textureWidth(1), density(1.f)
 	{
 		memset(lowChars, 0, sizeof(Glyph) * 256);
 	}
@@ -346,8 +346,9 @@ std::map<std::string, FT_Face*> faces;
 const int FONT_PAGE_SIZE = 512;
 
 Font* loadFontFT2(render::RenderDriver& driver, const char* filename,
-					std::vector<std::pair<int,int>>& pages, int size) {
+					std::vector<std::pair<int,int>>& pages, int size, double density) {
 	FontFT2* font = new FontFT2();
+	font->density = (float)density;
 	font->textureWidth = FONT_PAGE_SIZE;
 	font->textureHeight = FONT_PAGE_SIZE;
 
@@ -385,14 +386,18 @@ Font* loadFontFT2(render::RenderDriver& driver, const char* filename,
 	FT_New_Size(*face, &font->size);
 	FT_Activate_Size(font->size);
 
-	FT_Set_Char_Size(*face, 0, size << 6, 96, 96);
+	unsigned dpi = (unsigned)(96.0 * density + 0.5);
+	FT_Set_Char_Size(*face, 0, size << 6, dpi, dpi);
 
 	font->x_scale = (double)((*face)->size->metrics.x_scale / 65536.0);
 	font->y_scale = (double)((*face)->size->metrics.y_scale / 65536.0);
-	font->glyphHeight = (unsigned)((*face)->size->metrics.height >> 6);
 	font->face = face;
 
-	font->baseLine = font->glyphHeight + (unsigned)((*face)->size->metrics.descender >> 6);
+	//Glyph bitmaps are placed in pixels, layout uses points
+	unsigned glyphHeight = (unsigned)((*face)->size->metrics.height >> 6);
+	int baseLine = (int)glyphHeight + (int)((*face)->size->metrics.descender >> 6);
+	font->glyphHeight = (unsigned)((float)glyphHeight / font->density + 0.5f);
+	font->baseLine = (unsigned)((float)baseLine / font->density + 0.5f);
 	int lineHeight = 0;
 	
 	for(auto page = pages.begin(), end = pages.end(); page != end; ++page) {
@@ -417,8 +422,8 @@ Font* loadFontFT2(render::RenderDriver& driver, const char* filename,
 				glyph.w = glp->bitmap.width;
 				glyph.h = glp->bitmap.rows;
 				glyph.wOff = glp->bitmap_left;
-				glyph.hOff = font->baseLine - glp->bitmap_top;
-				glyph.xAdv = ((float)glp->metrics.horiAdvance) / 64.f;
+				glyph.hOff = baseLine - glp->bitmap_top;
+				glyph.xAdv = ((float)glp->metrics.horiAdvance) / (64.f * font->density);
 
 				glyph.x = x;
 				glyph.y = y;
@@ -436,7 +441,7 @@ Font* loadFontFT2(render::RenderDriver& driver, const char* filename,
 					glyph.y += lineHeight + 1;
 					lineHeight = glyph.h;
 
-					if(y + font->glyphHeight + 1 > (unsigned)FONT_PAGE_SIZE) {
+					if(y + glyphHeight + 1 > (unsigned)FONT_PAGE_SIZE) {
 						img = new Image(FONT_PAGE_SIZE, FONT_PAGE_SIZE, FMT_Alpha, 0xff);
 						images.push_back(img);
 

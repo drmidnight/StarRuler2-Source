@@ -27,10 +27,9 @@ void Library::loadFonts(const std::string& filename) {
 			auto p_ext = strrchr(font_file.c_str(), '.');
 			if(!p_ext || strcmp_nocase(p_ext, ".fnt") == 0)
 				font = render::loadFontFNT(devices.render, font_file.c_str());
-			else if(strcmp_nocase(p_ext, ".ttf") == 0)
-				font = render::loadFontFT2(*devices.render, font_file.c_str(), pages, size);
-			else if(strcmp_nocase(p_ext, ".otf") == 0)
-				font = render::loadFontFT2(*devices.render, font_file.c_str(), pages, size);
+			else if(strcmp_nocase(p_ext, ".ttf") == 0 || strcmp_nocase(p_ext, ".otf") == 0)
+				font = render::loadFontFT2(*devices.render, font_file.c_str(), pages, size,
+					devices.driver ? devices.driver->pixelDensity() : 1.0);
 			else
 				error("Font file '%s' in unrecognized format.", font_file.c_str());
 

@@ -1176,7 +1176,8 @@ void initMods(const std::vector<std::string>& mods) {
 			}, threads::getThreadID() );
 	}
 	
-	Loading::addTask("Fonts", "ModInit", [] {
+	//Fonts are rendered at the window's pixel density
+	Loading::addTask("Fonts", "ModInit,Window", [] {
 			libraryDir("data/fonts", resource::RT_Font);
 		} );
 

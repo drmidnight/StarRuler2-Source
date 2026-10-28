@@ -154,6 +154,10 @@ public:
 	int win_width, win_height;
 	//Size of the window's framebuffer in pixels, which rendering uses
 	int fb_width, fb_height;
+	//Framebuffer pixels per window point, 2 on Retina screens
+	double pixelDensity() const {
+		return win_width > 0 && fb_width > 0 ? (double)fb_width / (double)win_width : 1.0;
+	}
 
 	int mouse_x, mouse_y;
 	int leftButton, rightButton, middleButton;

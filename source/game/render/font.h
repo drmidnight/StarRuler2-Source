@@ -56,7 +56,8 @@ bool clipQuad(rectf pos, rectf source, const rectf* clip, vec2f* verts, vec2f* t
 
 Font* loadFontFNT(render::RenderDriver* driver, const char* filename);
 
+//Glyphs are rendered with density pixels per point, and measured in points
 Font* loadFontFT2(render::RenderDriver& driver, const char* filename,
-					std::vector<std::pair<int,int>>& pages, int size);
+					std::vector<std::pair<int,int>>& pages, int size, double density = 1.0);
 
 };

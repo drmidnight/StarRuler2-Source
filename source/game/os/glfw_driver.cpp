@@ -40,6 +40,7 @@ namespace os {
 void redirectWindowClose(GLFWwindow*);
 void redirectWindowResize(GLFWwindow*,int, int);
 void redirectFramebufferResize(GLFWwindow*,int, int);
+void redirectWindowMove(GLFWwindow*,int, int);
 void redirectSpecialKey(GLFWwindow*,int key, int scan, int action, int mods);
 void redirectCharKey(GLFWwindow*,unsigned);
 void redirectMouseButton(GLFWwindow*,int button, int action, int mods);
@@ -104,6 +105,12 @@ public:
 	bool retinaFramebuffer;
 
 	double frameTime, gameTime, gameSpeed;
+	//When the frame limiter last let a frame through, which paces the next one
+	double frameDeadline = 0.0;
+	//Swap interval the settings ask for, and the frame time that stands in for it
+	//when the driver's own vertical sync can't keep up with the display
+	int vsyncFrames = 0;
+	double vsyncInterval_s = 0.0;
 
 	GLFWDriver() : window(0), mouseOver(true), canLock(false), shouldLock(false), borderless(false), retinaFramebuffer(true) {
 		glfwSetErrorCallback(glfwError);
@@ -141,7 +148,28 @@ public:
 	}
 
 	void setVerticalSync(int waitFrames) {
+		vsyncFrames = waitFrames;
+		vsyncInterval_s = 0.0;
+#ifdef __APPLE__
+		//OpenGL on macOS presents at no more than 60Hz, even on 120Hz displays, so faster
+		//displays get no swap interval and the frame limiter paces to their refresh instead.
+		//The compositor keeps this from tearing.
+		if(waitFrames != 0 && window) {
+			const GLFWvidmode* mode = glfwGetVideoMode(getWindowMonitor());
+			if(mode && mode->refreshRate > 60) {
+				vsyncInterval_s = (double)abs(waitFrames) / (double)mode->refreshRate;
+				glfwSwapInterval(0);
+				return;
+			}
+		}
+#endif
 		glfwSwapInterval(waitFrames);
+	}
+
+	//The window may have moved to a display with a different refresh rate
+	void updateVerticalSync() {
+		if(vsyncFrames != 0)
+			setVerticalSync(vsyncFrames);
 	}
 
 	void readGamepads() {
@@ -196,9 +224,15 @@ public:
 		if(devices.cloud)
 			devices.cloud->update();
 
-		//Sleep until the frame limit is up, waking to handle events as they arrive
-		double waitTill = frameTime + minWait_s;
+		//Sleep until the frame limit is up, waking to handle events as they arrive.
+		//Frames are paced from the previous deadline rather than from when the wait
+		//ended, so waking late doesn't lower the frame rate; a frame that runs over
+		//starts the pacing again from now.
+		double interval = std::max(minWait_s, vsyncInterval_s);
 		double curTime = getAccurateTime();
+		double waitTill = frameDeadline + interval;
+		if(waitTill < curTime)
+			waitTill = curTime;
 
 		while(curTime < waitTill) {
 			glfwWaitEventsTimeout(waitTill - curTime);
@@ -206,6 +240,7 @@ public:
 				devices.cloud->update();
 			curTime = getAccurateTime();
 		}
+		frameDeadline = waitTill;
 
 		if(gameSpeed > 0 && game_running) {
 			double delta = curTime - frameTime;
@@ -349,7 +384,7 @@ public:
 			print("Window %dx%d at %d,%d, framebuffer %dx%d, %s", win_width, win_height, x, y, fb_width, fb_height,
 				borderless ? "borderless fullscreen" : data.mode == WM_Fullscreen ? "fullscreen" : "windowed");
 		}
-		glfwSwapInterval( data.verticalSync );
+		setVerticalSync(data.verticalSync);
 
 		if(data.mode == WM_Fullscreen)
 			setCursorVisible(true);
@@ -357,6 +392,7 @@ public:
 		glfwSetWindowCloseCallback(window, redirectWindowClose);
 		glfwSetWindowSizeCallback(window, redirectWindowResize);
 		glfwSetFramebufferSizeCallback(window, redirectFramebufferResize);
+		glfwSetWindowPosCallback(window, redirectWindowMove);
 		glfwSetKeyCallback(window, redirectSpecialKey);
 		glfwSetCharCallback(window, redirectCharKey);
 		glfwSetMouseButtonCallback(window, redirectMouseButton);
@@ -689,6 +725,10 @@ void redirectWindowResize(GLFWwindow*, int w, int h) {
 	driver->win_width = w;
 	driver->win_height = h;
 	driver->updateFramebufferSize();
+}
+
+void redirectWindowMove(GLFWwindow*, int, int) {
+	driver->updateVerticalSync();
 }
 
 void redirectFramebufferResize(GLFWwindow*, int, int) {

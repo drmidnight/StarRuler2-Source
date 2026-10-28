@@ -225,11 +225,6 @@ void GLTexture::loadFinish(bool mipmap, unsigned lod) {
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 
 		if(lod == 0) {
-			if(size.width * size.height > (1024 * 1024))
-				glHint(GL_GENERATE_MIPMAP_HINT, GL_FASTEST);
-			else
-				glHint(GL_GENERATE_MIPMAP_HINT, GL_NICEST);
-
 			glGenerateMipmap(GL_TEXTURE_2D);
 		}
 	}
@@ -362,11 +357,6 @@ void GLCubeMap::load(Image& image, bool mipmap, bool cachePixels) {
 		//Set linear mipmap filter
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-
-		if(size.width * size.height > (1024 * 1024))
-			glHint(GL_GENERATE_MIPMAP_HINT, GL_FASTEST);
-		else
-			glHint(GL_GENERATE_MIPMAP_HINT, GL_NICEST);
 
 		glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
 	}

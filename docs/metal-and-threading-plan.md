@@ -2,7 +2,7 @@
 
 Status: 2026-10-27. M0 to M4 are merged to `master` (M3 partly: M3.1, M3.2, M3.4, M3.5 phase 1 and
 M3.7 are done; the M4 window-mode test matrix is partly run). M5 is in progress on `m5-renderer`:
-M5.1 to M5.4 are done, and M5.5's switch to a 4.1 core context. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
+M5.1 to M5.5 are done; M5.6 is next. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
 Measurements are in [benchmark.md](benchmark.md).
 
 This plan moves the Apple Silicon fork from OpenGL 2.1 to a native Metal renderer and replaces the
@@ -686,14 +686,17 @@ The game runs on a 4.1 core, forward-compatible context. It took these steps, ea
    `shimProgram` output, a vertex array for every mesh and one shared by batches, and grey/alpha
    images as `GL_R8` swizzled to the values the old formats gave shaders.
 
-Still to do:
-- **60 Hz with VSync on.** OpenGL on macOS presents at no more than 60 Hz on a 120 Hz ProMotion
-  display, while VSync off reaches the frame cap. Until Metal (which can request the display's rate),
-  "VSync on" on displays above 60 Hz could use swap interval 0 and pace with the frame limiter at the
-  display's refresh rate.
-- `glGetError`/`reportErrors` compiled out in release; flush the batch before `glScissor` changes.
-- Apple's driver logs "unit 0 ... unloadable" once: FixedFunction's sampler is declared even when it
-  samples nothing. Binding a 1x1 white texture there would silence it, and M6 needs one anyway.
+Also done:
+- **120 Hz with VSync on.** OpenGL on macOS presents at no more than 60 Hz, even on a 120 Hz
+  ProMotion display. On displays above 60 Hz, "VSync on" now uses swap interval 0 and the frame
+  limiter paces to the display's refresh (checked again when the window moves). The limiter paces
+  from its previous deadline, so waking late no longer lowers the frame rate.
+- **Scissor:** `pushScreenClip`/`popScreenClip` flush the batch first, so batched geometry is never
+  clipped by a later scissor.
+- **Unit 0:** FixedFunction gets a 1x1 white texture when it samples nothing, which silences Apple's
+  "unit 0 ... unloadable" warning. M6 can use the same texture.
+- **`glGetError`:** the per-frame checks were already debug-only. The rest run while loading
+  textures, meshes and framebuffers, so they stay in release, where they report real errors.
 
 The original plan follows.
 

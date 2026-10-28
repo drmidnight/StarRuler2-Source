@@ -141,14 +141,14 @@ public:
 		if(devices.cloud)
 			devices.cloud->update();
 
+		//Sleep until the frame limit is up, waking to handle events as they arrive
 		double waitTill = frameTime + minWait_s;
 		double curTime = getAccurateTime();
 
 		while(curTime < waitTill) {
-			glfwPollEvents();
+			glfwWaitEventsTimeout(waitTill - curTime);
 			if(devices.cloud)
 				devices.cloud->update();
-			threads::sleep(0);
 			curTime = getAccurateTime();
 		}
 
@@ -165,7 +165,7 @@ public:
 	void handleEvents(unsigned minWait_ms) {
 		glfwPollEvents();
 		frameTime = getAccurateTime();
-		threads::sleep(minWait_ms);
+		glfwWaitEventsTimeout(minWait_ms / 1000.0);
 	}
 
 	void getDesktopSize(unsigned& width, unsigned& height) {

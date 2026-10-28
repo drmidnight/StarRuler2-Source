@@ -93,14 +93,6 @@ static inline void setRenderFuncs(BaseMaterial mat, bool intermediate) {
 	}
 }
 
-Texture* RenderDriver::createTexture() {
-	return new GLTexture();
-}
-
-Texture* RenderDriver::createCubemap() {
-	return new GLCubeMap();
-}
-
 bool isIntelCard = false;
 class GLDriver : public RenderDriver {
 public:
@@ -976,6 +968,14 @@ public:
 
 	ShaderProgram* createShaderProgram(const char* vertex_shader, const char* fragment_shader) {
 		return createGLShaderProgram(vertex_shader, fragment_shader);
+	}
+
+	Texture* createEmptyTexture() override {
+		return new GLTexture();
+	}
+
+	Texture* createEmptyCubemap() override {
+		return new GLCubeMap();
 	}
 
 	Texture* createTexture(Image& image, bool mipmap = true, bool cachePixels = false) {

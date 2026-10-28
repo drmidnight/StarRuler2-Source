@@ -255,6 +255,7 @@ SOURCES = \
 	profile/settings.cpp \
 	\
 	render/camera.cpp \
+	render/driver.cpp \
 	render/font_fnt.cpp \
 	render/font_ft2.cpp \
 	render/gl_driver.cpp \

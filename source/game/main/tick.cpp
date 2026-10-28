@@ -670,6 +670,8 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 
 	double render_end = devices.driver->getAccurateTime();
 	
+	if(render)
+		devices.render->presentFrame();
 	devices.driver->swapBuffers(maxfps && *maxfps > 0 ? 1.0 / *maxfps : 0.0);
 
 	double present_end = devices.driver->getAccurateTime();

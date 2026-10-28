@@ -91,6 +91,9 @@ public:
 	virtual Shader* createShader() = 0;
 	virtual ShaderProgram* createShaderProgram(const char* vertex_shader, const char* fragment_shader) = 0;
 	virtual Texture* createTexture(Image& image, bool mipmap = true, bool cachePixels = false) = 0;
+	//Textures for the active driver, loaded later
+	virtual Texture* createEmptyTexture() = 0;
+	virtual Texture* createEmptyCubemap() = 0;
 	static Texture* createTexture();
 	static Texture* createCubemap();
 
@@ -103,6 +106,9 @@ public:
 	virtual void drawBatch(const VertexTCV* vertices, unsigned vertexCount,
 		const unsigned short* indices, unsigned indexCount,
 		const RenderStep* steps, unsigned stepCount) = 0;
+
+	//Hands the frame to the display; drivers whose window swaps the frame need do nothing
+	virtual void presentFrame() {}
 
 	virtual void drawFPSGraph(const recti& location) = 0;
 

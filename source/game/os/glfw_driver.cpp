@@ -66,6 +66,13 @@ class GLFWDriver : public OSDriver {
 	std::list<Callback> callbacks[OSC_COUNT];
 	GLFWwindow* window;
 
+	//GLFW's joystick functions are main thread only, so gamepads are read once a
+	//frame and other threads read the copy
+	static const unsigned GamepadCount = 4;
+	GamepadState gamepads[GamepadCount];
+	bool gamepadConnected[GamepadCount] = {};
+	threads::Mutex gamepadLock;
+
 public:
 #ifndef WIN_MODE
 	//Nanoseconds on a monotonic clock, which unlike the wall clock never jumps
@@ -135,9 +142,55 @@ public:
 		glfwSwapInterval(waitFrames);
 	}
 
+	void readGamepads() {
+		static const int buttonMap[GP_ButtonCount] = {
+			GLFW_GAMEPAD_BUTTON_A, GLFW_GAMEPAD_BUTTON_B, GLFW_GAMEPAD_BUTTON_X, GLFW_GAMEPAD_BUTTON_Y,
+			GLFW_GAMEPAD_BUTTON_DPAD_UP, GLFW_GAMEPAD_BUTTON_DPAD_LEFT, GLFW_GAMEPAD_BUTTON_DPAD_DOWN, GLFW_GAMEPAD_BUTTON_DPAD_RIGHT,
+			GLFW_GAMEPAD_BUTTON_LEFT_BUMPER, -1, GLFW_GAMEPAD_BUTTON_LEFT_THUMB,
+			GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER, -1, GLFW_GAMEPAD_BUTTON_RIGHT_THUMB,
+			GLFW_GAMEPAD_BUTTON_BACK, GLFW_GAMEPAD_BUTTON_START,
+		};
+		//How far a trigger is pulled before it counts as a button press
+		const float triggerPress = 0.12f;
+
+		for(unsigned i = 0; i < GamepadCount; ++i) {
+			GLFWgamepadstate input;
+			bool connected = glfwGetGamepadState(GLFW_JOYSTICK_1 + (int)i, &input) == GLFW_TRUE;
+			GamepadState state = {};
+			if(connected) {
+				//GLFW's sticks are positive down, and its triggers go from -1 to 1
+				state.axes[GP_AxisLX] = input.axes[GLFW_GAMEPAD_AXIS_LEFT_X];
+				state.axes[GP_AxisLY] = -input.axes[GLFW_GAMEPAD_AXIS_LEFT_Y];
+				state.axes[GP_AxisRX] = input.axes[GLFW_GAMEPAD_AXIS_RIGHT_X];
+				state.axes[GP_AxisRY] = -input.axes[GLFW_GAMEPAD_AXIS_RIGHT_Y];
+				state.axes[GP_AxisLT] = (input.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER] + 1.f) * 0.5f;
+				state.axes[GP_AxisRT] = (input.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER] + 1.f) * 0.5f;
+
+				for(unsigned b = 0; b < GP_ButtonCount; ++b)
+					if(buttonMap[b] >= 0)
+						state.buttons[b] = input.buttons[buttonMap[b]] == GLFW_PRESS;
+				state.buttons[GP_LT] = state.axes[GP_AxisLT] > triggerPress;
+				state.buttons[GP_RT] = state.axes[GP_AxisRT] > triggerPress;
+			}
+
+			threads::Lock lock(gamepadLock);
+			gamepadConnected[i] = connected;
+			gamepads[i] = state;
+		}
+	}
+
+	bool getGamepadState(unsigned index, GamepadState& state) override {
+		if(index >= GamepadCount)
+			return false;
+		threads::Lock lock(gamepadLock);
+		state = gamepads[index];
+		return gamepadConnected[index];
+	}
+
 	void swapBuffers(double minWait_s) {
 		glfwSwapBuffers(window);
 		glfwPollEvents();
+		readGamepads();
 		if(devices.cloud)
 			devices.cloud->update();
 

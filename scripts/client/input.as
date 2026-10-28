@@ -46,7 +46,6 @@ array<double> edgePanTimers = {0.0, 0.0, 0.0, 0.0};
 bool doingBoxSelect = false;
 
 Joystick joystick(1);
-bool joystickConnected = false;
 bool joystickActive = false;
 
 SmartCamera@ ActiveCamera;
@@ -414,8 +413,7 @@ void tick(double time) {
 	
 	double tickMotion = time * camMotionPerSecond * 60.0;
 
-	//Polling a disconnected joystick on Windows takes ~10ms, so avoid it
-	if(joystickConnected && joystick.poll()) {	
+	if(joystick.poll()) {
 		//Send buttons to gui
 		for(uint i = 0, cnt = joystick.buttonCount; i < cnt; ++i) {
 			uint8 state = joystick.button[i];
@@ -591,7 +589,6 @@ void init() {
 
 	keybinds::Global.addBind(KB_ZOOM_LOCK_OBJECT, "zoom_object");
 	
-	//joystickConnected = joystick.connected();
 	PreviousCamera.reset();
 
 	if(settings::bDelayTopEdge) {

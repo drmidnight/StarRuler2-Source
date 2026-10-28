@@ -18,6 +18,29 @@ enum KeyAction {
 	KA_Repeated = 1+4,
 };
 
+//Buttons in the layout of an Xbox controller
+enum GamepadButton {
+	GP_A, GP_B, GP_X, GP_Y,
+	GP_Up, GP_Left, GP_Down, GP_Right,
+	GP_LB, GP_LT, GP_L3,
+	GP_RB, GP_RT, GP_R3,
+	GP_Back, GP_Start,
+	GP_ButtonCount
+};
+
+enum GamepadAxis {
+	GP_AxisLX, GP_AxisLY,
+	GP_AxisRX, GP_AxisRY,
+	GP_AxisLT, GP_AxisRT,
+	GP_AxisCount
+};
+
+struct GamepadState {
+	bool buttons[GP_ButtonCount];
+	//Sticks from -1 to 1, positive right and up. Triggers from 0 to 1.
+	float axes[GP_AxisCount];
+};
+
 struct WindowData {
 	int width, height;
 	int redbits, greenbits, bluebits, alphabits;
@@ -224,6 +247,8 @@ public:
 	virtual void setClipboard(const std::string& text) = 0;
 	virtual std::string getClipboard() = 0;
 
+	//Returns false when no gamepad is connected at index, counting from 0
+	virtual bool getGamepadState(unsigned index, GamepadState& state) = 0;
 	virtual int getCharForKey(int key) = 0;
 	virtual int getKeyForChar(unsigned char chr) = 0;
 

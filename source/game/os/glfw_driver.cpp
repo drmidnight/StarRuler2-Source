@@ -4,6 +4,7 @@
 #endif
 #include "compat/misc.h"
 #include "compat/gl.h"
+#include "GLFW/glfw3.h"
 #include "main/game_platform.h"
 #include "main/references.h"
 #include "main/logging.h"

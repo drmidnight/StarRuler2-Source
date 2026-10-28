@@ -4,6 +4,9 @@
 
 namespace render {
 
+//Resolves #include lines and #{{setting}} placeholders in shader source
+void preProcessShader(std::string& shader);
+
 class ShaderProgram {
 public:
 	virtual int compile() = 0;

@@ -274,6 +274,7 @@ SOURCES = \
 	render/bmf_loader.cpp \
 	render/shader_states.cpp \
 	render/shader_shim.cpp \
+	render/shader_preprocess.cpp \
 	\
 	resource/library.cpp \
 	resource/load_font.cpp \

@@ -12,6 +12,7 @@ namespace render {
 		~glFrameBuffer();
 
 		Texture* depthTexture;
+		Texture* getDepthTexture() const { return depthTexture; }
 
 		bool isPixelActive(vec2i px) const;
 		void bind();

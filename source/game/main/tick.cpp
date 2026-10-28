@@ -12,7 +12,7 @@
 #include "files.h"
 #include "design/projectiles.h"
 #include "render/vertexBuffer.h"
-#include "render/gl_framebuffer.h"
+#include "render/driver.h"
 #include "save_load.h"
 #include "main/signpost.h"
 #include <cmath>
@@ -581,7 +581,7 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 				rs.depthTest = render::DT_NoDepthTest;
 				rs.constant = false;
 				rs.textures[0] = rt;
-				rs.textures[7] = ((render::glFrameBuffer*)rt)->depthTexture; //fuck you framebuffers aren't textures
+				rs.textures[7] = rt->getDepthTexture();
 
 				auto* buffer = render::VertexBufferTCV::fetch(&rs);
 				auto* verts = buffer->request(1, render::PT_Quads);

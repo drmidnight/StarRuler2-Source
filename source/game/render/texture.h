@@ -29,6 +29,8 @@ public:
 	virtual void save(Image& image) const = 0;
 	virtual void bind() = 0;
 	virtual unsigned getID() const = 0;
+	//The depth attachment of a render target, or null for other textures
+	virtual Texture* getDepthTexture() const { return nullptr; }
 
 	virtual unsigned getTextureBytes() const = 0;
 

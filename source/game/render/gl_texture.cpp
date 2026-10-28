@@ -30,9 +30,46 @@ GLTexture::GLTexture(Image& image, bool mipmap, bool cachePixels)
 	load(image, mipmap, cachePixels);
 }
 
-void createTexture(Image& image, bool mipmap) {
-	GLenum format;
+//Core GL has no luminance or alpha formats. One-channel images are stored as red,
+//with a swizzle that gives shaders the values the old formats did.
+static GLenum pixelFormat(ColorFormat format) {
+	switch(format) {
+	case FMT_Grey:
+	case FMT_Alpha:
+		return GL_RED;
+	case FMT_RGB:
+		return GL_RGB;
+	case FMT_RGBA:
+		return GL_RGBA;
+	NO_DEFAULT
+	}
+}
 
+static GLenum internalFormat(ColorFormat format) {
+	switch(format) {
+	case FMT_Grey:
+	case FMT_Alpha:
+		return GL_R8;
+	case FMT_RGB:
+		return GL_RGB8;
+	case FMT_RGBA:
+		return GL_RGBA8;
+	NO_DEFAULT
+	}
+}
+
+static void setSwizzle(GLenum target, ColorFormat format) {
+	if(format == FMT_Grey) {
+		GLint swizzle[] = {GL_RED, GL_RED, GL_RED, GL_ONE};
+		glTexParameteriv(target, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
+	}
+	else if(format == FMT_Alpha) {
+		GLint swizzle[] = {GL_ZERO, GL_ZERO, GL_ZERO, GL_RED};
+		glTexParameteriv(target, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
+	}
+}
+
+void createTexture(Image& image, bool mipmap) {
 	unsigned levels = 1;
 	if(mipmap) {
 		unsigned smallDim = std::min(image.width, image.height);
@@ -42,75 +79,25 @@ void createTexture(Image& image, bool mipmap) {
 		}
 	}
 
-	if(GLEW_ARB_texture_storage) {
-		switch(image.format) {
-		case FMT_Grey:
-			format = GL_LUMINANCE8;
-			//{
-			//	GLint swizzleMask[] = {GL_RED, GL_RED, GL_RED, GL_ONE};
-			//	glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
-			//}
-			break;
-		case FMT_Alpha:
-			format = GL_ALPHA8;
-			//{
-			//	GLint swizzleMask[] = {GL_ONE, GL_ONE, GL_ONE, GL_RED};
-			//	glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzleMask);
-			//}
-			break;
-		case FMT_RGB:
-			format = GL_RGB8; break;
-		case FMT_RGBA:
-			format = GL_RGBA8; break;
-		NO_DEFAULT
-		}
-		glTexStorage2D(GL_TEXTURE_2D, levels, format, image.width, image.height);
-
-		if(!isIntelCard)
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, levels-1);
+	GLenum format = pixelFormat(image.format);
+	GLenum internal = internalFormat(image.format);
+	unsigned w = image.width, h = image.height;
+	for(unsigned i = 0; i < levels; ++i) {
+		glTexImage2D(GL_TEXTURE_2D, i, internal, w, h, 0, format, GL_UNSIGNED_BYTE, nullptr);
+		w /= 2;
+		h /= 2;
 	}
-	else {
-		//Sized lum/alpha are from texture storage arb
-		switch(image.format) {
-		case FMT_Grey:
-			format = GL_LUMINANCE; break;
-		case FMT_Alpha:
-			format = GL_ALPHA; break;
-		case FMT_RGB:
-			format = GL_RGB; break;
-		case FMT_RGBA:
-			format = GL_RGBA; break;
-		NO_DEFAULT
-		}
+	setSwizzle(GL_TEXTURE_2D, image.format);
 
-		unsigned w = image.width, h = image.height;
-		for(unsigned i = 0; i < levels; ++i) {
-			glTexImage2D(GL_TEXTURE_2D, i, format, w, h, 0, format, GL_UNSIGNED_BYTE, nullptr);
-			w /= 2;
-			h /= 2;
-		}
-
-		if(!isIntelCard)
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, levels-1);
-	}
+	if(!isIntelCard)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, levels-1);
 	devices.render->reportErrors("creating texture");
 }
 
 void loadTexture(Image& image, const recti& pixels, unsigned lod = 0) {
 	devices.render->reportErrors();
 
-	GLenum format;
-	switch(image.format) {
-	case FMT_Grey:
-		format = GL_LUMINANCE; break;
-	case FMT_Alpha:
-		format = GL_ALPHA; break;
-	case FMT_RGB:
-		format = GL_RGB; break;
-	case FMT_RGBA:
-		format = GL_RGBA; break;
-	NO_DEFAULT
-	}
+	GLenum format = pixelFormat(image.format);
 	
 	assert((unsigned)(pixels.topLeft.x + pixels.getWidth()) <= image.width);
 	assert((unsigned)(pixels.topLeft.y + pixels.getHeight()) <= image.height);
@@ -308,18 +295,9 @@ void GLCubeMap::load(Image& image, bool mipmap, bool cachePixels) {
 
 	unsigned char* data = image.grey;
 
-	GLenum format;
-	switch(image.format) {
-	case FMT_Grey:
-		format = GL_LUMINANCE; break;
-	case FMT_Alpha:
-		format = GL_ALPHA; break;
-	case FMT_RGB:
-		format = GL_RGB; break;
-	case FMT_RGBA:
-		format = GL_RGBA; break;
-	NO_DEFAULT
-	}
+	GLenum format = pixelFormat(image.format);
+	GLenum internal = internalFormat(image.format);
+	setSwizzle(GL_TEXTURE_CUBE_MAP, image.format);
 
 	auto getTile = [&](unsigned x, unsigned y) -> Image* {
 		vec2u top = vec2u(tile.width * x, tile.height * y);
@@ -327,27 +305,27 @@ void GLCubeMap::load(Image& image, bool mipmap, bool cachePixels) {
 	};
 	
 	auto* img = getTile(1,1);
-	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 0, format, tile.width, tile.height, 0, format, GL_UNSIGNED_BYTE, img->grey);
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z, 0, internal, tile.width, tile.height, 0, format, GL_UNSIGNED_BYTE, img->grey);
 	delete img;
 	
 	img = getTile(2,1);
-	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, format, tile.width, tile.height, 0, format, GL_UNSIGNED_BYTE, img->grey);
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X, 0, internal, tile.width, tile.height, 0, format, GL_UNSIGNED_BYTE, img->grey);
 	delete img;
 	
 	img = getTile(1,2);
-	glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, format, tile.width, tile.height, 0, format, GL_UNSIGNED_BYTE, img->grey);
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, internal, tile.width, tile.height, 0, format, GL_UNSIGNED_BYTE, img->grey);
 	delete img;
 	
 	img = getTile(3,1);
-	glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, format, tile.width, tile.height, 0, format, GL_UNSIGNED_BYTE, img->grey);
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, internal, tile.width, tile.height, 0, format, GL_UNSIGNED_BYTE, img->grey);
 	delete img;
 	
 	img = getTile(0,1);
-	glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 0, format, tile.width, tile.height, 0, format, GL_UNSIGNED_BYTE, img->grey);
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X, 0, internal, tile.width, tile.height, 0, format, GL_UNSIGNED_BYTE, img->grey);
 	delete img;
 	
 	img = getTile(1,0);
-	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 0, format, tile.width, tile.height, 0, format, GL_UNSIGNED_BYTE, img->grey);
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y, 0, internal, tile.width, tile.height, 0, format, GL_UNSIGNED_BYTE, img->grey);
 	delete img;
 	
 	devices.render->reportErrors("loading cubemap images");

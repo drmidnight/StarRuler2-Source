@@ -2,7 +2,8 @@
 
 Status: 2026-10-27. M0, M1 and M2 are merged to `master`. M3 is partly done on `m3-scheduler`
 (M3.1, M3.2, M3.4, M3.5 phase 1, and M3.7 on `m4-glfw`). M4 is in progress on `m4-glfw`, which builds
-on `m3-scheduler`: M4.1 and M4.2 are done, M4.3 is done except the gamepad, and M4.4 is next.
+on `m3-scheduler`: M4.1 to M4.4 are done, and the window-mode test matrix is partly run. Trackpad
+gestures are next, then M5. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
 Measurements are in [benchmark.md](benchmark.md).
 
 This plan moves the Apple Silicon fork from OpenGL 2.1 to a native Metal renderer and replaces the
@@ -413,7 +414,25 @@ near-zero CPU. Simulation throughput is equal or better. TSan is clean or triage
   size. GLFW reports the backing size even for an unscaled surface, so on macOS the framebuffer size
   comes from the `retinaFramebuffer` flag.
 
-**Still to do:** the gamepad port (M4.3), Retina (M4.4), and the window-mode test matrix below.
+- Gamepads go through `OSDriver::getGamepadState`, which uses GLFW's gamepad API and its built-in
+  SDL controller database. GLFW's joystick functions are main thread only and script ticks run on
+  the pool, so the driver reads the pads once a frame in `swapBuffers` and hands out a copy. The
+  XInput and xboxdrv paths are gone, and so is rumble, which GLFW lacks. The client script never
+  polled the pad before (`joystickConnected` was never set), so gamepad input is new in practice.
+- Nothing outside `os/` includes GLFW now. `compat/gl.h` only includes GLEW.
+- Retina (M4.4) is on, in one step instead of two:
+  - the framebuffer has the screen's pixel density (`retinaFramebuffer`);
+  - FreeType fonts rasterise at `96 × density` DPI and keep their metrics in points, so layout is
+    unchanged. Text widths add up fractional advances, where they used to truncate each one;
+  - fonts load after the window, to read the density;
+  - the 3D scene keeps rendering at the window's size in points and is scaled up, so the GPU cost is
+    unchanged. `bSupersample` renders it at full resolution;
+  - the UI renders at full resolution, including through the `dGUIScale` render target;
+  - not done: `.fnt` bitmap fonts and image assets stay at 1x, and `GL_LINES` draw one pixel wide.
+
+**Still to do:** the window-mode test matrix below. Windowed, borderless fullscreen and Cmd+Enter
+pass. Exclusive fullscreen, more than one monitor, Stage Manager, the console key, the trackpad
+and a gamepad are untested.
 
 ### M4.1 Build integration
 - Add GLFW 3.4 to `source/macos/build_deps.sh`:
@@ -748,6 +767,30 @@ Do these in order of measured benefit:
 
 ---
 
+## iOS readiness
+
+Not planned yet. These notes keep the current work from blocking it.
+
+- **Order:** iOS has no OpenGL, so it needs M6. GLFW has no iOS support, so it also needs a new
+  platform layer: SDL3 (window, touch, gamepad and audio on both platforms) or a small UIKit layer.
+  Decide when iOS work starts. SDL3 is the smaller change if it replaces GLFW on macOS too.
+- **Platform boundary:** keep all platform code behind `OSDriver` and in `os/`. Native window code
+  lives in `os/cocoa_window.mm`. Nothing outside `os/` includes GLFW.
+- **Input:** trackpad gestures (pinch, rotate, two-finger pan) become their own driver events, which
+  scripts handle in one place. Touch will feed the same events.
+- **UI work, the largest part:** the interface assumes a mouse and keyboard:
+  - hover tooltips: touch has no hover, so tap to preview;
+  - right-click context menus: long press;
+  - drag box-select: a selection mode or a two-finger drag;
+  - keyboard shortcuts: on-screen controls for the common ones;
+  - small hit targets: a touch UI scale, which `dGUIScale` can carry.
+- **Other:** sandboxed file paths for profiles and saves, app lifecycle (suspend saves and stops the
+  simulation), no Workshop or curl downloads, and memory limits for textures (M7.4's compressed
+  formats help).
+- **Licensing:** the earlier question about shipping on the App Store applies.
+
+---
+
 ## Risks
 
 | Risk | Likelihood | Mitigation |
@@ -770,7 +813,8 @@ Do these in order of measured benefit:
    memory of the GL spec.
 3. Do any script-side render bindings (`scripts/bind_render.cpp`) expose GL-specific behaviour beyond
    `VertexBufferTCV`? Audit this in M5.1.
-4. Retina UI scale: is it a user setting, or derived automatically from the backing scale factor?
+4. Retina UI scale: resolved. The UI is laid out in points and drawn at the backing scale factor, and
+   `dGUIScale` stays a user setting on top.
 5. Does the effects RNG need a fixed seed option for the parity harness, or is there already one?
 
 ## Key files

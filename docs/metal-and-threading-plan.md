@@ -2,7 +2,7 @@
 
 Status: 2026-10-27. M0 to M4 are merged to `master` (M3 partly: M3.1, M3.2, M3.4, M3.5 phase 1 and
 M3.7 are done; the M4 window-mode test matrix is partly run). M5 is in progress on `m5-renderer`:
-M5.1 to M5.4 are done; M5.5 is next. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
+M5.1 to M5.4 are done, and M5.5's switch to a 4.1 core context. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
 Measurements are in [benchmark.md](benchmark.md).
 
 This plan moves the Apple Silicon fork from OpenGL 2.1 to a native Metal renderer and replaces the
@@ -672,6 +672,31 @@ The original plan follows.
   Metal backend exists, and it is the future CI check.
 
 ### M5.5 Switch to an OpenGL 4.1 core profile
+The game runs on a 4.1 core, forward-compatible context. It took these steps, each run in-game:
+1. **FixedFunction shader** (`data/shaders/source/fixed_function_*.txt`, owned by `GLDriver`) for
+   every material without a shader: about 200 data materials, all fonts and the console. It follows
+   the GL 2.1 lighting equation and `GL_MODULATE`, with alpha-only textures modulating only alpha.
+   Textures that aren't loaded yet draw untextured, as fixed-function GL did.
+2. **Alpha test** in the fragment epilogue (`sr_AlphaTest`, `sr_AlphaRef`) for both shim targets.
+3. **No fixed-function state:** matrices, lights and materials go only to shaders; vertices only
+   through generic attributes.
+4. **Texture state:** no per-unit enables, no EXT direct state access, `TW_Clamp` is
+   `GL_CLAMP_TO_BORDER`, no mipmap hint.
+5. **The switch:** `<OpenGL/gl3.h>` with no GLEW (removed from the build), shaders compiled from
+   `shimProgram` output, a vertex array for every mesh and one shared by batches, and grey/alpha
+   images as `GL_R8` swizzled to the values the old formats gave shaders.
+
+Still to do:
+- **60 Hz with VSync on.** OpenGL on macOS presents at no more than 60 Hz on a 120 Hz ProMotion
+  display, while VSync off reaches the frame cap. Until Metal (which can request the display's rate),
+  "VSync on" on displays above 60 Hz could use swap interval 0 and pace with the frame limiter at the
+  display's refresh rate.
+- `glGetError`/`reportErrors` compiled out in release; flush the batch before `glScissor` changes.
+- Apple's driver logs "unit 0 ... unloadable" once: FixedFunction's sampler is declared even when it
+  samples nothing. Binding a 1x1 white texture there would silence it, and M6 needs one anyway.
+
+The original plan follows.
+
 - `glfw_driver.cpp:163-164`:
   - `GLFW_CONTEXT_VERSION_MAJOR/MINOR` = 4/1;
   - `GLFW_OPENGL_PROFILE` = `GLFW_OPENGL_CORE_PROFILE`;

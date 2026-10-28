@@ -54,17 +54,6 @@ fetch freetype https://download.savannah.gnu.org/releases/freetype/freetype-2.13
 cmake_build freetype -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON -DFT_DISABLE_BZIP2=ON \
 	-DFT_DISABLE_PNG=ON -DFT_REQUIRE_ZLIB=ON
 
-#GLEW's own build system is make based; the library is a single source file
-fetch glew https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0.tgz \
-	d4fc82893cfb00109578d0a1a2337fb8ca335b3ceccf97b97e5cc7f08e4353e1
-clang -O2 -arch arm64 -mmacosx-version-min="$MACOSX_DEPLOYMENT_TARGET" -DGLEW_STATIC -DGLEW_NO_GLU \
-	-I"$WORK/glew/include" -c "$WORK/glew/src/glew.c" -o "$WORK/glew/glew.o"
-rm -f "$PREFIX/lib/libGLEW.a"
-ar rcs "$PREFIX/lib/libGLEW.a" "$WORK/glew/glew.o"
-mkdir -p "$PREFIX/include/GL"
-cp "$WORK/glew/include/GL/"*.h "$PREFIX/include/GL/"
-echo "built glew"
-
 fetch glfw https://github.com/glfw/glfw/releases/download/3.4/glfw-3.4.zip \
 	b5ec004b2712fd08e8861dc271428f048775200a2df719ccf575143ba749a3e9
 cmake_build glfw -DGLFW_BUILD_EXAMPLES=OFF -DGLFW_BUILD_TESTS=OFF -DGLFW_BUILD_DOCS=OFF

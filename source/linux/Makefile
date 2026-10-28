@@ -16,7 +16,7 @@ ifeq ($(UNAME), Darwin)
 export MACOSX_DEPLOYMENT_TARGET ?= 13.0
 #Use the static libraries from source/macos/build_deps.sh when they have been built
 export MACDEPS ?= $(CURDIR)/deps/macos
-ifneq ($(wildcard $(MACDEPS)/lib/libGLEW.a),)
+ifneq ($(wildcard $(MACDEPS)/lib/libglfw3.a),)
 export USE_MACDEPS = 1
 endif
 else
@@ -142,12 +142,10 @@ else
 	CXXFLAGS += -I$(BREW)/opt/freetype/include
 	CXXFLAGS += -I$(BREW)/opt/freetype/include/freetype2
 	CXXFLAGS += -I$(BREW)/opt/libpng/include
-	CXXFLAGS += -I$(BREW)/opt/glew/include
 
 	LDFLAGS += -L$(BREW)/lib
 	LDFLAGS += -L$(BREW)/opt/freetype/lib
 	LDFLAGS += -L$(BREW)/opt/libpng/lib
-	LDFLAGS += -L$(BREW)/opt/glew/lib
 	LDFLAGS += -L$(BREW)/opt/glfw/lib
 endif
 
@@ -159,12 +157,12 @@ else
 	ifndef DEBUG
 		LDFLAGS += -Lsource/lib/lin$(ARCH)
 	endif
-	LDFLAGS += -lglfw -lGL -lGLU -lX11 -lXrandr -lXxf86vm -lXi -lopenal -lcurl
+	LDFLAGS += -lglfw -lGL -lGLU -lGLEW -lX11 -lXrandr -lXxf86vm -lXi -lopenal -lcurl
 
 endif
 
 #Libraries
-LDFLAGS += -lstdc++ -lGLEW -lpng -lz -lpthread
+LDFLAGS += -lstdc++ -lpng -lz -lpthread
 LDFLAGS += -lm -lfreetype
 LDFLAGS += -lvorbisfile
 ifdef USE_MACDEPS

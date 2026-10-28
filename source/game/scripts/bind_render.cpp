@@ -64,7 +64,7 @@ To* grabbedCast(From* f) {
 }
 
 void takeScreenshot(const std::string& fname, bool increment = true) {
-	Image* screen = devices.render->getScreen(0,0,devices.driver->win_width,devices.driver->win_height);
+	Image* screen = devices.render->getScreen(0,0,devices.driver->fb_width,devices.driver->fb_height);
 
 	std::string filename = devices.mods.getGlobalProfile("screenshots") + "/" + fname;
 	if(filename.empty())

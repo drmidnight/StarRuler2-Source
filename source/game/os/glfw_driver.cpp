@@ -37,6 +37,7 @@ namespace os {
 
 void redirectWindowClose(GLFWwindow*);
 void redirectWindowResize(GLFWwindow*,int, int);
+void redirectFramebufferResize(GLFWwindow*,int, int);
 void redirectSpecialKey(GLFWwindow*,int key, int scan, int action, int mods);
 void redirectCharKey(GLFWwindow*,unsigned);
 void redirectMouseButton(GLFWwindow*,int button, int action, int mods);
@@ -90,10 +91,12 @@ public:
 	bool canLock, shouldLock;
 	//Whether the window covers the screen without owning the monitor
 	bool borderless;
+	//Whether the framebuffer has the screen's pixel density, rather than one pixel per point
+	bool retinaFramebuffer;
 
 	double frameTime, gameTime, gameSpeed;
 
-	GLFWDriver() : window(0), mouseOver(true), canLock(false), shouldLock(false), borderless(false) {
+	GLFWDriver() : window(0), mouseOver(true), canLock(false), shouldLock(false), borderless(false), retinaFramebuffer(false) {
 		glfwSetErrorCallback(glfwError);
 		glfwInit();
 		resetTimer();
@@ -182,8 +185,7 @@ public:
 		glfwWindowHint(GLFW_REFRESH_RATE, data.refreshRate);
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
-		//The game sizes its viewport and UI in window points, so keep the framebuffer at window size
-		glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_FALSE);
+		glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, retinaFramebuffer ? GLFW_TRUE : GLFW_FALSE);
 
 		GLFWmonitor* monitor = nullptr;
 		borderless = false;
@@ -283,13 +285,13 @@ public:
 		glfwMakeContextCurrent(window);
 
 		glfwGetWindowSize(window, &win_width, &win_height);
+		updateFramebufferSize();
 		{
-			int fbWidth = 0, fbHeight = 0, x = 0, y = 0;
-			glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+			int x = 0, y = 0;
 			glfwGetWindowPos(window, &x, &y);
 			GLint viewport[4] = {0, 0, 0, 0};
 			glGetIntegerv(GL_VIEWPORT, viewport);
-			print("Window %dx%d at %d,%d, backing %dx%d, GL surface %dx%d, %s", win_width, win_height, x, y, fbWidth, fbHeight,
+			print("Window %dx%d at %d,%d, framebuffer %dx%d, GL surface %dx%d, %s", win_width, win_height, x, y, fb_width, fb_height,
 				viewport[2], viewport[3], borderless ? "borderless fullscreen" : data.mode == WM_Fullscreen ? "fullscreen" : "windowed");
 		}
 		glfwSwapInterval( data.verticalSync );
@@ -299,6 +301,7 @@ public:
 
 		glfwSetWindowCloseCallback(window, redirectWindowClose);
 		glfwSetWindowSizeCallback(window, redirectWindowResize);
+		glfwSetFramebufferSizeCallback(window, redirectFramebufferResize);
 		glfwSetKeyCallback(window, redirectSpecialKey);
 		glfwSetCharCallback(window, redirectCharKey);
 		glfwSetMouseButtonCallback(window, redirectMouseButton);
@@ -356,6 +359,18 @@ public:
 
 	bool isWindowMinimized() override {
 		return glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0;
+	}
+
+	void updateFramebufferSize() {
+#ifdef __APPLE__
+		//GLFW reports the backing size even when the surface isn't scaled
+		if(!retinaFramebuffer) {
+			fb_width = win_width;
+			fb_height = win_height;
+			return;
+		}
+#endif
+		glfwGetFramebufferSize(window, &fb_width, &fb_height);
 	}
 
 	void flashWindow() override {
@@ -618,7 +633,13 @@ void redirectWindowResize(GLFWwindow*, int w, int h) {
 	driver->onResize(w,h);
 	driver->win_width = w;
 	driver->win_height = h;
-	glViewport(0, 0, w, h);
+	driver->updateFramebufferSize();
+	glViewport(0, 0, driver->fb_width, driver->fb_height);
+}
+
+void redirectFramebufferResize(GLFWwindow*, int, int) {
+	driver->updateFramebufferSize();
+	glViewport(0, 0, driver->fb_width, driver->fb_height);
 }
 
 void redirectSpecialKey(GLFWwindow*, int key, int scan, int action, int mods) {

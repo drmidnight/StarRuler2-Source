@@ -104,7 +104,7 @@ public:
 	const RenderMesh* skyboxMesh;
 	bool cleared;
 	bool intermediateBlend;
-	vec2i screenSize, frameSize;
+	vec2i screenSize, frameSize, framebufferSize;
 	double fov;
 	double zNear, zFar;
 
@@ -1077,8 +1077,8 @@ public:
 		glFrameBuffer* frame = dynamic_cast<glFrameBuffer*>(texture);
 		if(!frame) {
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
-			glViewport(0,0,screenSize.x,screenSize.y);
-			frameSize = screenSize;
+			frameSize = framebufferSize.x > 0 ? framebufferSize : screenSize;
+			glViewport(0,0,frameSize.x,frameSize.y);
 		}
 		else {
 			frame->setAsTarget();
@@ -1155,6 +1155,11 @@ public:
 		screenSize.x = w;
 		screenSize.y = h;
 		frameSize = screenSize;
+	}
+
+	void setFramebufferSize(int w, int h) override {
+		framebufferSize.x = w;
+		framebufferSize.y = h;
 	}
 
 	void setFOV(double FOV) {

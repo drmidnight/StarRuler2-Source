@@ -494,6 +494,7 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 
 	if(render) {
 		devices.render->setScreenSize(screenSize.x, screenSize.y);
+		devices.render->setFramebufferSize(devices.driver->fb_width, devices.driver->fb_height);
 		devices.render->setRenderTarget(rt);
 
 		//The 3D pass relies on the skybox covering the whole screen and never clears

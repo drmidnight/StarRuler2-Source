@@ -41,7 +41,10 @@ public:
 
 	virtual void setSkybox(const RenderState* mat) = 0;
 	virtual void setSkyboxMesh(const RenderMesh* mesh) = 0;
+	//Size of the 2D coordinate space and the 3D aspect
 	virtual void setScreenSize(int w, int h) = 0;
+	//Size in pixels of the window's framebuffer, which the screen covers
+	virtual void setFramebufferSize(int w, int h) = 0;
 	virtual void setFOV(double fov) = 0;
 	virtual void setNearFarPlanes(double near, double far) = 0;
 

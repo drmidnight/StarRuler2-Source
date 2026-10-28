@@ -150,7 +150,10 @@ public:
 	bool shiftKey, altKey, ctrlKey;
 	//Command on macOS
 	bool superKey;
+	//Window size in points, which the UI and mouse use
 	int win_width, win_height;
+	//Size of the window's framebuffer in pixels, which rendering uses
+	int fb_width, fb_height;
 
 	int mouse_x, mouse_y;
 	int leftButton, rightButton, middleButton;
@@ -221,7 +224,7 @@ public:
 	virtual int getKeyForChar(unsigned char chr) = 0;
 
 	OSDriver() : shiftKey(false), altKey(false), ctrlKey(false), superKey(false),
-			win_width(0), win_height(0), mouse_x(0), mouse_y(0),
+			win_width(0), win_height(0), fb_width(0), fb_height(0), mouse_x(0), mouse_y(0),
 			leftButton(false), rightButton(false), middleButton(false), preciseScroll(false) {}
 	virtual ~OSDriver() {}
 };

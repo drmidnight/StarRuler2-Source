@@ -3,6 +3,7 @@
 #include "render/render_state.h"
 #include "render/render_mesh.h"
 #include "render/texture.h"
+#include "render/shader_builtins.h"
 #include "matrix.h"
 #include "mesh.h"
 #include "rect.h"
@@ -27,9 +28,6 @@ namespace render {
 	};
 
 	class Camera;
-
-	//Most lights that can be active at once
-	const unsigned MAX_LIGHTS = 8;
 
 	struct LightDesc {
 		//Transformed by the current model transform when set

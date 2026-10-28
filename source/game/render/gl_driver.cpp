@@ -119,19 +119,9 @@ public:
 		bb_up_p_right, bb_up_m_right;
 	quaterniond BBFacingRot;
 
-	//Material colours. Ambient is set once with the default diffuse, and never changes
-	Colorf ambient, diffuse, specular;
-	float shininess;
-
-	//Light state as shaders read it, with positions in eye space
-	struct LightState {
-		bool enabled;
-		vec4f position;
-		Colorf diffuse, specular;
-		float constantAttenuation, linearAttenuation, quadraticAttenuation;
-	};
-	LightState lights[MAX_LIGHTS];
-	Colorf lightModelAmbient;
+	//Everything shaders read through gl_* built-ins. Material ambient is set once
+	//with the default diffuse, and never changes.
+	BuiltinState builtins;
 
 	RenderState state_3d;
 	RenderState state_2d;
@@ -140,7 +130,6 @@ public:
 
 	//The driver owns the transforms; GL only ever gets them loaded whole.
 	//The model-view stack's top is the current transform, relative to the camera.
-	Matrix projection;
 	std::vector<Matrix> modelView;
 
 	vec3f lightPosition[2];
@@ -157,20 +146,6 @@ public:
 		state_2d.baseMat = MAT_Alpha;
 		state_2d.culling = FC_None;
 		modelView.push_back(Matrix());
-
-		//GL's initial light state
-		for(unsigned i = 0; i < MAX_LIGHTS; ++i) {
-			auto& light = lights[i];
-			Colorf initial = i == 0 ? Colorf(1.f, 1.f, 1.f, 1.f) : Colorf(0.f, 0.f, 0.f, 1.f);
-			light.enabled = false;
-			light.position = vec4f(0.f, 0.f, 1.f, 0.f);
-			light.diffuse = initial;
-			light.specular = initial;
-			light.constantAttenuation = 1.f;
-			light.linearAttenuation = 0.f;
-			light.quadraticAttenuation = 0.f;
-		}
-		lightModelAmbient = Colorf(0.2f, 0.2f, 0.2f, 1.f);
 	}
 
 	~GLDriver() {
@@ -243,7 +218,9 @@ public:
 	}
 
 	void loadModelView() {
-		glLoadMatrixd(modelView.back().m);
+		builtins.modelView = modelView.back();
+		++builtins.matrixSerial;
+		glLoadMatrixd(builtins.modelView.m);
 	}
 
 	void pushModelView(const Matrix& matrix) {
@@ -252,9 +229,10 @@ public:
 	}
 
 	void setProjection(const Matrix& matrix) {
-		projection = matrix;
+		builtins.projection = matrix;
+		++builtins.matrixSerial;
 		glMatrixMode(GL_PROJECTION);
-		glLoadMatrixd(projection.m);
+		glLoadMatrixd(builtins.projection.m);
 		glMatrixMode(GL_MODELVIEW);
 	}
 
@@ -325,13 +303,14 @@ public:
 		glActiveTexture(GL_TEXTURE0);
 		textureStage = GL_TEXTURE0;
 
-		diffuse = Colorf(1.f, 1.f, 1.f, 1.f);
-		ambient = diffuse;
-		specular = Colorf(1.f, 1.f, 1.f, 1.f);
-		shininess = 8.f;
-		glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, (const GLfloat*)&diffuse);
-		glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, (const GLfloat*)&specular);
-		glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
+		builtins.materialDiffuse = Colorf(1.f, 1.f, 1.f, 1.f);
+		builtins.materialAmbient = builtins.materialDiffuse;
+		builtins.materialSpecular = Colorf(1.f, 1.f, 1.f, 1.f);
+		builtins.materialShininess = 8.f;
+		++builtins.materialSerial;
+		glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, (const GLfloat*)&builtins.materialDiffuse);
+		glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, (const GLfloat*)&builtins.materialSpecular);
+		glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, builtins.materialShininess);
 	}
 
 	void set2DRenderState() {
@@ -645,18 +624,21 @@ public:
 
 		if(state.lighting) {
 			//Lighting model material settings
-			if(state.diffuse != diffuse) {
-				diffuse = state.diffuse;
+			if(state.diffuse != builtins.materialDiffuse) {
+				builtins.materialDiffuse = state.diffuse;
+				++builtins.materialSerial;
 				glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, (GLfloat*)&state.diffuse);
 			}
 
-			if(state.specular != specular) {
-				specular = state.specular;
+			if(state.specular != builtins.materialSpecular) {
+				builtins.materialSpecular = state.specular;
+				++builtins.materialSerial;
 				glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, (GLfloat*)&state.specular);
 			}
 
-			if(state.shininess != shininess) {
-				shininess = state.shininess;
+			if(state.shininess != builtins.materialShininess) {
+				builtins.materialShininess = state.shininess;
+				++builtins.materialSerial;
 				glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, state.shininess);
 			}
 		}
@@ -1169,21 +1151,22 @@ public:
 		setDefaultRenderState();
 
 		//Lighting
-		lights[0].enabled = true;
-		lights[0].diffuse = Colorf(2.5f, 2.5f, 2.5f, 1.f);
-		lights[0].specular = Colorf(1.f, 1.f, 1.f, 1.f);
-		lights[0].quadraticAttenuation = 1.f/(500.f*500.f);
+		builtins.lights[0].enabled = true;
+		builtins.lights[0].diffuse = Colorf(2.5f, 2.5f, 2.5f, 1.f);
+		builtins.lights[0].specular = Colorf(1.f, 1.f, 1.f, 1.f);
+		builtins.lights[0].quadraticAttenuation = 1.f/(500.f*500.f);
 		applyLight(0);
 
-		lights[1].enabled = true;
-		lights[1].diffuse = Colorf(0.f, 0.f, 0.f, 1.f);
-		lights[1].specular = Colorf(0.f, 0.f, 0.f, 1.f);
-		lights[1].quadraticAttenuation = 1.f/(500.f*500.f);
+		builtins.lights[1].enabled = true;
+		builtins.lights[1].diffuse = Colorf(0.f, 0.f, 0.f, 1.f);
+		builtins.lights[1].specular = Colorf(0.f, 0.f, 0.f, 1.f);
+		builtins.lights[1].quadraticAttenuation = 1.f/(500.f*500.f);
 		applyLight(1);
 
 		//System defaults
-		lightModelAmbient = Colorf(0.175f, 0.175f, 0.175f, 0.f);
-		glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (GLfloat*)&lightModelAmbient);
+		builtins.lightModelAmbient = Colorf(0.175f, 0.175f, 0.175f, 0.f);
+		++builtins.lightSerial;
+		glLightModelfv(GL_LIGHT_MODEL_AMBIENT, (GLfloat*)&builtins.lightModelAmbient);
 
 		if(GLEW_ARB_seamless_cube_map)
 			glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
@@ -1338,7 +1321,8 @@ public:
 	void setLight(unsigned index, const LightDesc* desc) override {
 		if(index >= MAX_LIGHTS)
 			return;
-		auto& light = lights[index];
+		auto& light = builtins.lights[index];
+		++builtins.lightSerial;
 		if(!desc) {
 			light.enabled = false;
 			glDisable(GL_LIGHT0 + index);
@@ -1359,7 +1343,7 @@ public:
 
 	//Sends the CPU state of a light to GL
 	void applyLight(unsigned index) {
-		auto& light = lights[index];
+		auto& light = builtins.lights[index];
 		GLenum id = GL_LIGHT0 + index;
 		if(!light.enabled) {
 			glDisable(id);
@@ -1375,7 +1359,7 @@ public:
 		//The position is already in eye space
 		glLoadIdentity();
 		glLightfv(id, GL_POSITION, &light.position.x);
-		loadModelView();
+		glLoadMatrixd(builtins.modelView.m);
 	}
 
 	void drawBatch(const VertexTCV* vertices, unsigned vertexCount,

@@ -357,21 +357,6 @@ public:
 		return pos;
 	}
 
-	//Compiles the shimmed shader, falling back to the original if the shim's output fails
-	GLuint compileShimmed(GLenum type, const std::string& fname, const std::string& source) {
-		std::string shimmed, problems;
-		ShaderStage stage = type == GL_VERTEX_SHADER ? SS_Vertex : SS_Fragment;
-		if(!shimShader(source, stage, ST_GLSL120, shimmed, problems))
-			warn("Shader %s reads %s, which comes from fixed-function state", fname.c_str(), problems.c_str());
-
-		GLuint shader = compileShader(type, fname, shimmed);
-		if(!shader) {
-			error("Compiling %s without the shader shim", fname.c_str());
-			shader = compileShader(type, fname, source);
-		}
-		return shader;
-	}
-
 	GLuint compileShader(GLenum type, const std::string& fname, const std::string& source) {
 		GLuint shader;
 
@@ -425,33 +410,37 @@ public:
 
 	int compile() override {
 		reset();
-		//Compile vertex shader
-		{
-			auto contents = getFileContents(vertex_file);
-			preProcessShader(contents);
-			if(contents.empty()) {
-				error("Could not open vertex shader, or the file was empty");
-				return 1;
-			}
-
-			vertex_shader = compileShimmed(GL_VERTEX_SHADER, vertex_file, contents);
-			if(!vertex_shader)
-				return 1;
+		auto vertex = getFileContents(vertex_file);
+		auto fragment = getFileContents(fragment_file);
+		preProcessShader(vertex);
+		preProcessShader(fragment);
+		if(vertex.empty()) {
+			error("Could not open vertex shader, or the file was empty");
+			return 1;
+		}
+		if(fragment.empty()) {
+			error("Could not open fragment shader, or the file was empty");
+			return 2;
 		}
 
-		//Compile fragment shader
-		{
-			auto contents = getFileContents(fragment_file);
-			preProcessShader(contents);
-			fragment_shader = compileShimmed(GL_FRAGMENT_SHADER, fragment_file, contents);
-			if(!fragment_shader) {
-				if(contents.empty())
-					error("Could not open fragment shader, or the file was empty");
-				glDeleteShader(vertex_shader);
-				return 2;
-			}
+		//The core profile only takes modern GLSL, so the shim's output is all there is
+		std::string vertexShimmed, fragmentShimmed, problems;
+		if(!shimProgram(vertex, fragment, ST_GLSL410, vertexShimmed, fragmentShimmed, problems)) {
+			error("Shaders %s and %s use built-ins with no replacement: %s",
+				vertex_file.c_str(), fragment_file.c_str(), problems.c_str());
+			return 1;
 		}
-		
+
+		vertex_shader = compileShader(GL_VERTEX_SHADER, vertex_file, vertexShimmed);
+		if(!vertex_shader)
+			return 1;
+
+		fragment_shader = compileShader(GL_FRAGMENT_SHADER, fragment_file, fragmentShimmed);
+		if(!fragment_shader) {
+			glDeleteShader(vertex_shader);
+			return 2;
+		}
+
 		//Link entire program
 		program = glCreateProgram();
 		
@@ -467,6 +456,7 @@ public:
 		glBindAttribLocation(program, SA_Color, "in_color");
 		glBindAttribLocation(program, SA_Color, "sr_Color");
 		glBindAttribLocation(program, SA_UV2, "in_uv2");
+		glBindFragDataLocation(program, 0, "sr_FragColor");
 
 		glAttachShader(program, vertex_shader);
 		glAttachShader(program, fragment_shader);

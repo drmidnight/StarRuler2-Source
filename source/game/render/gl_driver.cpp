@@ -1015,10 +1015,11 @@ public:
 
 	bool init() {
 		//Check for sufficient opengl version
-		glewInit();
-
-		if(!GLEW_VERSION_2_1) {
-			fprintf(stderr, "Error: Requires OpenGL 2.1\n");
+		GLint major = 0, minor = 0;
+		glGetIntegerv(GL_MAJOR_VERSION, &major);
+		glGetIntegerv(GL_MINOR_VERSION, &minor);
+		if(major < 4 || (major == 4 && minor < 1)) {
+			fprintf(stderr, "Error: Requires OpenGL 4.1\n");
 			return false;
 		}
 
@@ -1040,8 +1041,7 @@ public:
 		builtins.lightModelAmbient = Colorf(0.175f, 0.175f, 0.175f, 0.f);
 		++builtins.lightSerial;
 
-		if(GLEW_ARB_seamless_cube_map)
-			glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+		glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
 
 		//Support strange sizes of image
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -1055,7 +1055,7 @@ public:
 		print("OpenGL vendor '%s', renderer '%s'", vendorString, rendererString);
 		print("       version '%s'", versionString);
 		if(isIntelCard)
-			print("-- Using Intel mode. (%d)", GLEW_ARB_texture_storage);
+			print("-- Using Intel mode.");
 
 		return true;
 	}

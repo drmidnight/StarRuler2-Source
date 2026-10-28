@@ -238,8 +238,10 @@ public:
 	void createWindow(WindowData& data) {
 		glfwWindowHint(GLFW_SAMPLES, data.aa_samples);
 		glfwWindowHint(GLFW_REFRESH_RATE, data.refreshRate);
-		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+		glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+		glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
 		glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, retinaFramebuffer ? GLFW_TRUE : GLFW_FALSE);
 
 		GLFWmonitor* monitor = nullptr;

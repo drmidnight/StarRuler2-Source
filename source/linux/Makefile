@@ -151,6 +151,7 @@ endif
 
 	LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit
 	LDFLAGS += -framework CoreFoundation -framework OpenAL -framework QuartzCore
+	LDFLAGS += -framework Metal
 
 	LDFLAGS += -lcurl
 else
@@ -362,7 +363,8 @@ OBJ_FILES = $(addprefix $(OBJDIR)/, $(SOURCES:.cpp=.o))
 DEP_FILES = $(addprefix $(OBJDIR)/, $(SOURCES:.cpp=.d))
 
 ifeq ($(UNAME), Darwin)
-#Objective-C++ for the native window
+#Objective-C++ for the native window and the Metal renderer, with automatic reference counting
+OBJCFLAGS = -fobjc-arc
 OBJC_SOURCES = os/cocoa_window.mm
 OBJ_FILES += $(addprefix $(OBJDIR)/, $(OBJC_SOURCES:.mm=.o))
 DEP_FILES += $(addprefix $(OBJDIR)/, $(OBJC_SOURCES:.mm=.d))
@@ -386,12 +388,12 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 
 $(OBJDIR)/%.d: $(SRCDIR)/%.mm
 	@mkdir -p $(dir $@)
-	@$(CC) $(CXXFLAGS) -MM -MT "$(@:.d=.o)" $< >> $@
+	@$(CC) $(CXXFLAGS) $(OBJCFLAGS) -MM -MT "$(@:.d=.o)" $< >> $@
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.mm
 	@mkdir -p $(dir $@)
 	@echo $<
-	@$(CC) $(CXXFLAGS) $< -c -o $@
+	@$(CC) $(CXXFLAGS) $(OBJCFLAGS) $< -c -o $@
 
 #Complete binary compile
 $(BINDIR)/$(BIN): makelibs $(OBJ_FILES) $(LIB_FILES) $(COPY_LIBS)

@@ -16,7 +16,7 @@ static bool coveringScreen = false;
 static bool preciseScroll = false;
 
 void* getNativeWindow(GLFWwindow* window) {
-	return (void*)glfwGetCocoaWindow(window);
+	return (__bridge void*)glfwGetCocoaWindow(window);
 }
 
 void attachCocoaWindow(GLFWwindow* window, void (*onGesture)(int type, double x, double y)) {
@@ -42,14 +42,14 @@ void attachCocoaWindow(GLFWwindow* window, void (*onGesture)(int type, double x,
 		}];
 }
 
-static void removeObserver(id& observer) {
+static void removeObserver(__strong id& observer) {
 	if(observer) {
 		[[NSNotificationCenter defaultCenter] removeObserver:observer];
 		observer = nil;
 	}
 }
 
-static void removeMonitor(id& monitor) {
+static void removeMonitor(__strong id& monitor) {
 	if(monitor) {
 		[NSEvent removeMonitor:monitor];
 		monitor = nil;

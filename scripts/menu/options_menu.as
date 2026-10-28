@@ -702,6 +702,12 @@ class CameraOptions : OptionsBox {
 			panel, recti_area(286, y,  278, 28),
 			locale::OPT_DELAY_TOP_EDGE, "bDelayTopEdge"
 		));
+
+		y += 38;
+		options.insertLast(GuiEngineToggle(
+			panel, recti_area(8, y,  278, 28),
+			locale::OPT_TRACKPAD_PAN, "bTrackpadPan"
+		));
 	}
 };
 

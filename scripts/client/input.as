@@ -140,6 +140,12 @@ void onMouseWheel(double x, double y) {
 	if(targetMouseWheel(x, y))
 		return;
 
+	//Trackpad deltas arrive in tenths of a point, with x positive when the fingers move left
+	if(preciseScrolling && settings::bTrackpadPan) {
+		onGesture(GT_Pan, x * -10.0, y * 10.0);
+		return;
+	}
+
 	activeCamera.zoom(y);
 }
 
@@ -159,7 +165,7 @@ void onGesture(int type, double x, double y) {
 			activeCamera.twist(x);
 		break;
 		case GT_Pan:
-			activeCamera.pan(int(x), int(y));
+			activeCamera.panBy(x, y);
 		break;
 	}
 }

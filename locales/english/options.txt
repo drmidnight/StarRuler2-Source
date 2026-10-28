@@ -153,6 +153,7 @@ OPT_EDGE_PAN: Enable Edge Panning
 OPT_RESEARCH_EDGE_PAN: Research Tab Edge Panning
 OPT_ESCAPE_GALAXY_TAB: Escape Returns to Galaxy Tab
 OPT_DELAY_TOP_EDGE: Delay Top Edge Pan
+OPT_TRACKPAD_PAN: Trackpad Scrolling Pans
 OPT_CAPTURE_CURSOR: Capture Cursor
 
 OPT_BLOOM: Bloom

@@ -86,6 +86,8 @@ Category: Camera
 		Default: False
 	Bool: bEdgePan
 		Default: True
+	Bool: bTrackpadPan
+		Default: False
 	Bool: bDelayTopEdge
 		Default: False
 	Bool: bZoomToCursor

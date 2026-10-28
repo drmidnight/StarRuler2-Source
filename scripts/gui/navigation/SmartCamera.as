@@ -179,6 +179,11 @@ class SmartCamera : Savable {
 
 	//Pan on top of the world plane
 	void pan(int dx, int dy) {
+		panBy(double(dx), double(dy));
+	}
+
+	//Pan by a movement in points, which can be fractional
+	void panBy(double dx, double dy) {
 		if(!settings::bInvertPanX)
 			dx = -dx;
 		if(settings::bInvertPanY)
@@ -186,8 +191,8 @@ class SmartCamera : Savable {
 
 		//Normal world plane movement
 		vec2d movement;
-		movement.x = movePerPixel * double(dx);
-		movement.y = movePerPixel * double(dy);
+		movement.x = movePerPixel * dx;
+		movement.y = movePerPixel * dy;
 
 		pan(movement);
 	}

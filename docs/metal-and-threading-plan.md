@@ -2,7 +2,7 @@
 
 Status: 2026-10-27. M0 to M4 are merged to `master` (M3 partly: M3.1, M3.2, M3.4, M3.5 phase 1 and
 M3.7 are done; the M4 window-mode test matrix is partly run). M5 is in progress on `m5-renderer`:
-M5.1 is done. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
+M5.1 is done, and M5.2's CPU-side half. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
 Measurements are in [benchmark.md](benchmark.md).
 
 This plan moves the Apple Silicon fork from OpenGL 2.1 to a native Metal renderer and replaces the
@@ -519,6 +519,20 @@ Done. The leaks and how each was closed:
 factory, and M6 adds the Metal one beside it.
 
 ### M5.2 Move fixed-function state onto the CPU
+Done on the CPU side; the rest lands with the shim (M5.3):
+- **Done:** the transform stack, light and material state live in `GLDriver` as plain data. GL
+  only receives whole matrices (`glLoadMatrixd`) and eye-space light positions, so `gluPerspective`,
+  `gluLookAt`, `glOrtho`, `glPushMatrix`/`glMultMatrixd` are gone. `Matrix` gained `ortho`, `lookAt`
+  and `scale`. The batch limit is 16384 vertices.
+- **Moved to M5.3:** the `SRBuiltins` block, the alpha-test uniform and generic attributes with a VAO
+  for `VertexBufferTCV`. All three only take effect once shaders are rewritten, because GLSL 1.20
+  reads `gl_*` state and fixed-function vertex pointers. Meshes already use generic attributes 0-5
+  with VAOs (attribute 0 aliases `gl_Vertex`).
+- **Not needed:** quads are already indexed triangles in `VertexBufferTCV`, and meshes have no quads.
+  16-bit indices stay; a batch is well under 65536 vertices.
+
+The original plan follows.
+
 - **Matrices:**
   - The driver keeps projection, view and a model stack as `double` matrices.
   - `setTransformation`/`resetTransformation`/`setBBTransform` push and pop on that stack.
@@ -814,8 +828,18 @@ Not planned yet. These notes keep the current work from blocking it.
 
 1. Which Workshop mods ship `.txt` shaders, and which built-ins do they use? Run `shadertool` over a
    sample before M6.
-2. Exact `SRBuiltins` fields: generate them from a scan of all built-in shaders, rather than from
-   memory of the GL spec.
+2. Exact `SRBuiltins` fields: resolved by a scan of `data/shaders/source` (141 files). Shaders read:
+   - matrices: `gl_ModelViewMatrix`, `gl_ProjectionMatrix`, `gl_ModelViewProjectionMatrix`,
+     `gl_NormalMatrix`, and `gl_ProjectionMatrixInverse` (once, `fs_post_process_vs.txt`);
+   - `gl_LightSource[]`: `position`, `diffuse`, `specular`, and all three attenuations (no
+     `ambient`); index 0, 1 or a loop variable;
+   - `gl_FrontMaterial`: `ambient`, `diffuse`, `specular`, `shininess` (no `emission`). Ambient is
+     always white: GL sets it once from the default diffuse;
+   - `gl_LightModel.ambient` (0.175 grey);
+   - inputs `gl_Vertex`, `gl_Normal`, `gl_Color`, `gl_MultiTexCoord0`; outputs `gl_FrontColor`,
+     `gl_BackColor`, `gl_FragColor`, and `gl_TexCoord[0]` in one shader pair.
+
+   `GLDriver` already keeps all of these on the CPU.
 3. Script render bindings: resolved in M5.1. They go through `RenderDriver` and `RenderState`, and
    the bound enums are engine values, not GL ones. GL semantics the Metal backend has to reproduce:
    - light positions are transformed by the model transform current when `light.enable()` runs;

@@ -264,8 +264,9 @@ public:
 			int x = 0, y = 0;
 			glfwGetMonitorPos(monitor, &x, &y);
 			glfwSetWindowPos(window, x, y);
-			enterBorderlessFullscreen(window);
+			//Showing a window can move it below the menu bar, so it covers the screen after
 			glfwShowWindow(window);
+			enterBorderlessFullscreen(window);
 		}
 #endif
 
@@ -281,11 +282,12 @@ public:
 
 		glfwGetWindowSize(window, &win_width, &win_height);
 		{
-			int fbWidth = 0, fbHeight = 0;
+			int fbWidth = 0, fbHeight = 0, x = 0, y = 0;
 			glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+			glfwGetWindowPos(window, &x, &y);
 			GLint viewport[4] = {0, 0, 0, 0};
 			glGetIntegerv(GL_VIEWPORT, viewport);
-			print("Window %dx%d, framebuffer %dx%d, GL surface %dx%d, %s", win_width, win_height, fbWidth, fbHeight,
+			print("Window %dx%d at %d,%d, backing %dx%d, GL surface %dx%d, %s", win_width, win_height, x, y, fbWidth, fbHeight,
 				viewport[2], viewport[3], borderless ? "borderless fullscreen" : data.mode == WM_Fullscreen ? "fullscreen" : "windowed");
 		}
 		glfwSwapInterval( data.verticalSync );
@@ -357,7 +359,7 @@ public:
 	void flashWindow() override {
 		glfwRequestWindowAttention(window);
 	}
-	
+
 	bool isMouseOver() {
 		return mouseOver;
 	}

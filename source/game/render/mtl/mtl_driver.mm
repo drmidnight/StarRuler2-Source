@@ -214,6 +214,10 @@ public:
 	void setFramebufferSize(int w, int h) override {
 		BaseDriver::setFramebufferSize(w, h);
 		if(layer && w > 0 && h > 0) {
+			//Moving to a screen with another backing scale changes the drawable's pixels
+			NSWindow* window = (__bridge NSWindow*)devices.driver->getNativeWindow();
+			if(window && layer.contentsScale != window.backingScaleFactor)
+				layer.contentsScale = window.backingScaleFactor;
 			CGSize size = layer.drawableSize;
 			if((int)size.width != w || (int)size.height != h)
 				layer.drawableSize = CGSizeMake(w, h);
@@ -229,6 +233,7 @@ public:
 		frameIndex = (frameIndex + 1) % framesInFlight;
 		frameBuffers[frameIndex].used = 0;
 		commandBuffer = [queue commandBuffer];
+		commandBuffer.label = @"Frame";
 	}
 
 	id<MTLTexture> screenDepthFor(id<MTLTexture> color) {
@@ -272,6 +277,7 @@ public:
 		pass.depthAttachment.clearDepth = 1.0;
 		pass.depthAttachment.storeAction = MTLStoreActionStore;
 		encoder = [commandBuffer renderCommandEncoderWithDescriptor:pass];
+		encoder.label = target ? @"Render target" : @"Screen";
 		clearColor = clearDepth = false;
 
 		//A flipped target reverses the winding of everything drawn into it
@@ -653,6 +659,7 @@ public:
 		}
 
 		MTLRenderPipelineDescriptor* desc = [MTLRenderPipelineDescriptor new];
+		desc.label = [NSString stringWithUTF8String:program->fragmentFile.c_str()];
 		desc.vertexFunction = program->vertexFunction;
 		desc.fragmentFunction = program->fragmentFunction;
 		desc.vertexDescriptor = vertex;

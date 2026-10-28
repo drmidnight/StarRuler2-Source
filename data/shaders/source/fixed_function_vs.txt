@@ -1,0 +1,53 @@
+#version 120
+//Stands in for OpenGL's fixed-function pipeline when a material has no shader.
+//Lighting follows the OpenGL 2.1 lighting equation, with no local viewer, no
+//spot lights, no colour material and one-sided lighting, as the engine set it up.
+uniform int sr_FixedLighting;
+uniform int sr_LightEnabled[8];
+varying vec2 uv;
+
+vec4 lightVertex(vec3 pos, vec3 normal) {
+	vec4 color = gl_LightModel.ambient * gl_FrontMaterial.ambient;
+	for(int i = 0; i < 8; ++i) {
+		if(sr_LightEnabled[i] == 0)
+			continue;
+
+		vec4 lightPos = gl_LightSource[i].position;
+		vec3 toLight;
+		float attenuation = 1.0;
+		if(lightPos.w != 0.0) {
+			toLight = lightPos.xyz / lightPos.w - pos;
+			float dist = length(toLight);
+			toLight /= dist;
+			attenuation = 1.0 / (gl_LightSource[i].constantAttenuation
+				+ gl_LightSource[i].linearAttenuation * dist
+				+ gl_LightSource[i].quadraticAttenuation * dist * dist);
+		}
+		else {
+			toLight = normalize(lightPos.xyz);
+		}
+
+		float diffuse = dot(normal, toLight);
+		vec4 term = gl_FrontMaterial.ambient * gl_LightSource[i].ambient;
+		if(diffuse > 0.0) {
+			term += diffuse * gl_FrontMaterial.diffuse * gl_LightSource[i].diffuse;
+			vec3 halfVector = normalize(toLight + vec3(0.0, 0.0, 1.0));
+			float specular = max(dot(normal, halfVector), 0.0);
+			term += pow(specular, gl_FrontMaterial.shininess) * gl_FrontMaterial.specular * gl_LightSource[i].specular;
+		}
+		color += attenuation * term;
+	}
+	color = clamp(color, 0.0, 1.0);
+	color.a = gl_FrontMaterial.diffuse.a;
+	return color;
+}
+
+void main() {
+	vec4 pos = gl_ModelViewMatrix * gl_Vertex;
+	gl_Position = gl_ProjectionMatrix * pos;
+	uv = gl_MultiTexCoord0.xy;
+	if(sr_FixedLighting != 0)
+		gl_FrontColor = lightVertex(pos.xyz, normalize(gl_NormalMatrix * gl_Normal));
+	else
+		gl_FrontColor = gl_Color;
+}

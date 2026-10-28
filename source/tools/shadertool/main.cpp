@@ -162,7 +162,9 @@ int main(int argc, char** argv) {
 	}
 	fs::create_directories(out);
 
-	std::vector<Program> programs;
+	//The renderer's own program for materials without a shader
+	std::vector<Program> programs = {{"FixedFunction", "data/shaders/source/fixed_function_vs.txt",
+		"data/shaders/source/fixed_function_ps.txt", roots.front()}};
 	for(auto& root : roots)
 		readPrograms(root, programs);
 

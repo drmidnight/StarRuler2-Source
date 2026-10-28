@@ -1,0 +1,16 @@
+#version 120
+//Stands in for OpenGL's fixed-function texturing (GL_MODULATE on unit 0).
+//sr_FixedTexture is 0 with no texture, 1 for colour textures, and 2 for
+//alpha-only textures, which modulate only the alpha.
+uniform int sr_FixedTexture;
+uniform sampler2D sr_Texture0;
+varying vec2 uv;
+
+void main() {
+	vec4 color = gl_Color;
+	if(sr_FixedTexture == 1)
+		color *= texture2D(sr_Texture0, uv);
+	else if(sr_FixedTexture == 2)
+		color.a *= texture2D(sr_Texture0, uv).a;
+	gl_FragColor = color;
+}

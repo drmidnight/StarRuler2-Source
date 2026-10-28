@@ -12,17 +12,6 @@
 
 namespace render {
 
-bool vertexArraysAvailable = false, vertArraysChecked = false;
-
-bool useVertexArrays() {
-	if(vertArraysChecked)
-		return vertexArraysAvailable;
-
-	vertexArraysAvailable = GLEW_ARB_vertex_array_object;
-	vertArraysChecked = true;
-	return vertexArraysAvailable;
-}
-
 const RenderMesh* lastRenderedMesh = 0;
 void glPrepareDraw();
 
@@ -65,9 +54,12 @@ public:
 		if(!valid)
 			return;
 		
-		//macOS legacy GL contexts have no ARB vertex array objects, so the array is never created there
-		if(vertex_array != 0)
+		if(lastRenderedMesh == this)
+			lastRenderedMesh = nullptr;
+		if(vertex_array != 0) {
 			glDeleteVertexArrays(1, &vertex_array);
+			vertex_array = 0;
+		}
 		glDeleteBuffers(1, &vertex_buffer);
 		glDeleteBuffers(1, &element_buffer);
 		if(tangent_buffer != 0) {
@@ -162,24 +154,24 @@ public:
 		}
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+		//The element buffer binding belongs to the vertex array, so it has to be bound first
+		glGenVertexArrays(1, &vertex_array);
+		glBindVertexArray(vertex_array);
+
 		// Generate element buffer
 		faces = (unsigned)mesh.faces.size();
 		glGenBuffers(1, &element_buffer);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, element_buffer);
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, faces * sizeof(Mesh::Face),
 					 &mesh.faces[0], GL_STATIC_DRAW);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
 		devices.render->reportErrors("Filling mesh buffers");
 
-		if(useVertexArrays()) {
-			glGenVertexArrays(1, &vertex_array);
-			glBindVertexArray(vertex_array);
-			setupBuffers();
-			glBindVertexArray(0);
+		setupBuffers();
+		//Whatever was drawn last has lost its vertex array binding
+		lastRenderedMesh = nullptr;
 
-			devices.render->reportErrors("Setting up mesh vertex array");
-		}
+		devices.render->reportErrors("Setting up mesh vertex array");
 
 		//Generate Bounding Box
 		for(unsigned i = 0; i < vertices; ++i)
@@ -216,10 +208,7 @@ public:
 			if(!valid)
 				return;
 			lastRenderedMesh = this;
-			if(vertex_array)
-				glBindVertexArray(vertex_array);
-			else
-				setupBuffers();
+			glBindVertexArray(vertex_array);
 
 			//Shaders reading vertex colours get white from meshes that have none
 			if(!color_buffer)

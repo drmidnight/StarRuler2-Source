@@ -9,13 +9,14 @@ namespace render {
 
 	extern const RenderMesh* lastRenderedMesh;
 	extern float* shaderUniforms;
-	extern bool useVertexArrays();
 	void glPrepareDraw();
 
 	//Batches stream through a ring of buffers so a new upload never waits on a draw in flight
 	static std::deque<GLuint> vertBuffer, indBuffer;
 	//Marks the bound buffers as not belonging to any mesh
 	static char batchMesh;
+	//Batches share one vertex array, whose buffers change with each draw
+	static GLuint batchArray = 0;
 
 	void glDrawBatch(const VertexTCV* vertices, unsigned vertexCount,
 		const unsigned short* indices, unsigned indexCount,
@@ -32,8 +33,9 @@ namespace render {
 
 		{
 			lastRenderedMesh = reinterpret_cast<const render::RenderMesh*>(&batchMesh);
-			if(useVertexArrays())
-				glBindVertexArray(0);
+			if(batchArray == 0)
+				glGenVertexArrays(1, &batchArray);
+			glBindVertexArray(batchArray);
 			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indBuffer.front());
 			glBindBuffer(GL_ARRAY_BUFFER, vertBuffer.front());
 

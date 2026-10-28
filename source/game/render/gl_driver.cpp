@@ -136,11 +136,7 @@ public:
 		glActiveTexture(GL_TEXTURE0);
 		textureStage = GL_TEXTURE0;
 
-		builtins.materialDiffuse = Colorf(1.f, 1.f, 1.f, 1.f);
-		builtins.materialAmbient = builtins.materialDiffuse;
-		builtins.materialSpecular = Colorf(1.f, 1.f, 1.f, 1.f);
-		builtins.materialShininess = 8.f;
-		++builtins.materialSerial;
+		resetMaterial();
 	}
 
 	void switchToRenderState(const RenderState& state) {
@@ -471,20 +467,7 @@ public:
 		//Initialize state
 		setDefaultRenderState();
 
-		//Lighting
-		builtins.lights[0].enabled = true;
-		builtins.lights[0].diffuse = Colorf(2.5f, 2.5f, 2.5f, 1.f);
-		builtins.lights[0].specular = Colorf(1.f, 1.f, 1.f, 1.f);
-		builtins.lights[0].quadraticAttenuation = 1.f/(500.f*500.f);
-
-		builtins.lights[1].enabled = true;
-		builtins.lights[1].diffuse = Colorf(0.f, 0.f, 0.f, 1.f);
-		builtins.lights[1].specular = Colorf(0.f, 0.f, 0.f, 1.f);
-		builtins.lights[1].quadraticAttenuation = 1.f/(500.f*500.f);
-
-		//System defaults
-		builtins.lightModelAmbient = Colorf(0.175f, 0.175f, 0.175f, 0.f);
-		++builtins.lightSerial;
+		initLights();
 
 		glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
 

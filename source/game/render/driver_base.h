@@ -74,6 +74,31 @@ public:
 		modelView.push_back(Matrix());
 	}
 
+	//The material state of the default render state
+	void resetMaterial() {
+		builtins.materialDiffuse = Colorf(1.f, 1.f, 1.f, 1.f);
+		builtins.materialAmbient = builtins.materialDiffuse;
+		builtins.materialSpecular = Colorf(1.f, 1.f, 1.f, 1.f);
+		builtins.materialShininess = 8.f;
+		++builtins.materialSerial;
+	}
+
+	//The lights the game starts with, until a scene sets its own
+	void initLights() {
+		builtins.lights[0].enabled = true;
+		builtins.lights[0].diffuse = Colorf(2.5f, 2.5f, 2.5f, 1.f);
+		builtins.lights[0].specular = Colorf(1.f, 1.f, 1.f, 1.f);
+		builtins.lights[0].quadraticAttenuation = 1.f/(500.f*500.f);
+
+		builtins.lights[1].enabled = true;
+		builtins.lights[1].diffuse = Colorf(0.f, 0.f, 0.f, 1.f);
+		builtins.lights[1].specular = Colorf(0.f, 0.f, 0.f, 1.f);
+		builtins.lights[1].quadraticAttenuation = 1.f/(500.f*500.f);
+
+		builtins.lightModelAmbient = Colorf(0.175f, 0.175f, 0.175f, 0.f);
+		++builtins.lightSerial;
+	}
+
 	//Clears the current target, by ClearFlags
 	virtual void clear(unsigned flags) = 0;
 	//Limits drawing to <clip> in screen coordinates, or stops limiting it when null

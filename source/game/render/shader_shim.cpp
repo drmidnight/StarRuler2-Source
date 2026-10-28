@@ -81,7 +81,7 @@ static const Mapping mappings[] = {
 	{"texture2DLod", "sr_texture2DLod", D_texture2DLod, MF_Stages | MF_Core},
 	{"textureCubeLod", "sr_textureCubeLod", D_textureCubeLod, MF_Stages | MF_Core},
 	//The fragment shader's main is wrapped to apply the alpha test
-	{"main", "sr_main", D_main, MF_Fragment | MF_Core},
+	{"main", "sr_main", D_main, MF_Fragment | MF_Targets},
 };
 
 //Built-ins that GLSL 1.20 provides without fixed-function state
@@ -270,11 +270,8 @@ static void declare(std::string& out, unsigned used, ShaderStage stage, ShimTarg
 			out += "vec4 sr_BackColor;\n";
 		if(used & D_TexCoord)
 			out += std::string(varying) + " vec4 sr_TexCoord[" + std::to_string(texCoordCount) + "];\n";
-		if(stage == SS_Fragment) {
+		if(stage == SS_Fragment)
 			out += "out vec4 sr_FragColor;\n";
-			out += "uniform int sr_AlphaTest;\n";
-			out += "uniform float sr_AlphaRef;\n";
-		}
 		if(used & D_texture2D) {
 			out += "vec4 sr_texture2D(sampler2D s, vec2 uv) { return texture(s, uv); }\n";
 			out += "vec4 sr_texture2D(sampler2D s, vec2 uv, float bias) { return texture(s, uv, bias); }\n";
@@ -287,18 +284,23 @@ static void declare(std::string& out, unsigned used, ShaderStage stage, ShimTarg
 			out += "vec4 sr_texture2DLod(sampler2D s, vec2 uv, float lod) { return textureLod(s, uv, lod); }\n";
 		if(used & D_textureCubeLod)
 			out += "vec4 sr_textureCubeLod(samplerCube s, vec3 dir, float lod) { return textureLod(s, dir, lod); }\n";
-		if(stage == SS_Fragment)
-			out += "void sr_main();\n";
+	}
+
+	if(stage == SS_Fragment) {
+		out += "uniform int sr_AlphaTest;\n";
+		out += "uniform float sr_AlphaRef;\n";
+		out += "void sr_main();\n";
 	}
 }
 
 //Runs the shader, then applies the alpha test GL did after it
-static const char* alphaTestMain =
-	"\nvoid main() {\n"
-	"\tsr_main();\n"
-	"\tif(sr_AlphaTest != 0 && !(sr_FragColor.a > sr_AlphaRef))\n"
-	"\t\tdiscard;\n"
-	"}\n";
+static std::string alphaTestMain(const char* fragColor) {
+	return std::string("\nvoid main() {\n")
+		+ "\tsr_main();\n"
+		+ "\tif(sr_AlphaTest != 0 && !(" + fragColor + ".a > sr_AlphaRef))\n"
+		+ "\t\tdiscard;\n"
+		+ "}\n";
+}
 
 //<vertexVaryings> are the vertex shader's varyings when shimming a program's fragment shader
 static bool shimStage(const std::string& source, ShaderStage stage, ShimTarget target,
@@ -456,8 +458,8 @@ static bool shimStage(const std::string& source, ShaderStage stage, ShimTarget t
 	//GLSL 1.20 numbers the line after "#line N" as N+1, later versions as N
 	output += core ? "#line 1\n" : "#line 0\n";
 	output += body;
-	if(core && stage == SS_Fragment)
-		output += alphaTestMain;
+	if(stage == SS_Fragment)
+		output += alphaTestMain(core ? "sr_FragColor" : "gl_FragColor");
 
 	problems.clear();
 	for(auto& name : unsupported) {

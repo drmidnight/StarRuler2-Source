@@ -671,9 +671,11 @@ public:
 	//Draws <state>, which has no shader of its own, with the FixedFunction shader
 	void bindFixedFunction(const RenderState& state) {
 		int lighting = state.lighting ? 1 : 0;
+		//Fixed-function GL ignored a texture that wasn't loaded yet and drew the
+		//vertex colour, where sampling it in a shader gives zero
 		int texture = 0;
 		if(Texture* tex = state.textures[0])
-			if(tex->type == TT_2D)
+			if(tex->type == TT_2D && tex->loaded && tex->getID() != 0)
 				texture = tex->alphaOnly ? 2 : 1;
 		if(lighting != builtins.fixedLighting || texture != builtins.fixedTexture) {
 			builtins.fixedLighting = lighting;

@@ -1,7 +1,7 @@
 # Metal Backend and Threading Overhaul Plan
 
 Status: 2026-10-28. M0 to M5 are merged to `master` (M3 partly: M3.1, M3.2, M3.4, M3.5 phase 1 and
-M3.7 are done; the M4 window-mode test matrix is partly run). M6 is next. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
+M3.7 are done; the M4 window-mode test matrix is partly run). M6 is in progress on `m6-metal`. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
 Measurements are in [benchmark.md](benchmark.md).
 
 This plan moves the Apple Silicon fork from OpenGL 2.1 to a native Metal renderer and replaces the
@@ -757,6 +757,27 @@ regression on the benchmark.
 ---
 
 ## M6: Metal backend
+
+Progress on `m6-metal`:
+- **Backend switch:** `sRenderBackend` (`gl` default, or `metal`), and `--render-backend` on the command
+  line. With Metal the window has no GL context and a `CAMetalLayer`.
+- **Shared driver code:** `render/driver_base.h` (`BaseDriver`) holds everything API-independent:
+  transforms, built-ins, lights, camera data and drawing through the batcher. `GLDriver` and
+  `mtl::Driver` add state, clears, scissors, targets and resources.
+- **Metal renderer** (`render/mtl/`): shaders go through the shim and `translateProgram` at load, with
+  uniforms packed from reflection; textures (grey and alpha swizzled, RGB expanded), cubemaps, render
+  targets with sampleable depth, batches in per-frame buffers, meshes, FixedFunction, scissor and
+  readback for captures. Render targets are drawn with clip space flipped (`sr_FlipY`, applied by the
+  shim's vertex epilogue), so their contents, sampling and readback match GL's orientation.
+- **Parity:** all seven capture views match GL within the run-to-run noise (menu identical).
+- **To do:** performance (uniforms are looked up by name per draw; state is rebound per draw), the
+  translation cache and pipeline pre-creation (first launch compiles every shader; macOS caches the
+  compiled MSL after that), off-thread texture uploads, debug labels, a console switch, and
+  `contentsScale` when the window changes screens.
+- **GL got slower during M6** (seen in play, not measured yet). Suspects: the `BaseDriver` split and
+  the `sr_FlipY` uniform GL now uploads with every matrix change.
+
+The original plan follows.
 
 ### M6.1 Layout and build
 ```

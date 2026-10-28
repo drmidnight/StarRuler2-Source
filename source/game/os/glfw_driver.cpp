@@ -9,6 +9,7 @@
 #include "main/game_platform.h"
 #include "main/references.h"
 #include "main/logging.h"
+#include "main/capture.h"
 #include "threads.h"
 #include "vec2.h"
 #include <list>
@@ -534,7 +535,7 @@ public:
 	}
 	
 	bool isMouseOver() {
-		return mouseOver;
+		return mouseOver && !capture::active();
 	}
 
 	void setClipboard(const std::string& text) {
@@ -582,6 +583,11 @@ public:
 	}
 
 	void getMousePos(int& x, int& y) {
+		//Captures must not depend on where the real cursor happens to be
+		if(capture::active()) {
+			x = y = -10000;
+			return;
+		}
 		double dx, dy;
 		glfwGetCursorPos(window, &dx,&dy);
 		x = (int)floor(dx);
@@ -790,6 +796,8 @@ void redirectCharKey(GLFWwindow*, unsigned key) {
 }
 
 void redirectMouseButton(GLFWwindow*, int button, int action, int mods) {
+	if(capture::active())
+		return;
 	bool pressed = action == GLFW_PRESS;
 	
 	driver->shiftKey = (mods & GLFW_MOD_SHIFT) != 0;
@@ -814,6 +822,8 @@ void redirectMouseButton(GLFWwindow*, int button, int action, int mods) {
 }
 
 void redirectMouseMove(GLFWwindow*, double x, double y) {
+	if(capture::active())
+		return;
 	driver->onMouseMoved((int)x, (int)y);
 	driver->mouse_x = (int)x;
 	driver->mouse_y = (int)y;
@@ -826,6 +836,8 @@ void redirectGesture(int type, double x, double y) {
 #endif
 
 void redirectMouseWheel(GLFWwindow*, double x, double y) {
+	if(capture::active())
+		return;
 #ifdef __APPLE__
 	driver->preciseScroll = lastScrollWasPrecise();
 #endif

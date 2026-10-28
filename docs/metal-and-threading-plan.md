@@ -1,9 +1,8 @@
 # Metal Backend and Threading Overhaul Plan
 
-Status: 2026-10-27. M0, M1 and M2 are merged to `master`. M3 is partly done on `m3-scheduler`
-(M3.1, M3.2, M3.4, M3.5 phase 1, and M3.7 on `m4-glfw`). M4 is in progress on `m4-glfw`, which builds
-on `m3-scheduler`: M4.1 to M4.4 are done, and the window-mode test matrix is partly run. Trackpad
-gestures are next, then M5. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
+Status: 2026-10-27. M0 to M4 are merged to `master` (M3 partly: M3.1, M3.2, M3.4, M3.5 phase 1 and
+M3.7 are done; the M4 window-mode test matrix is partly run). M5 is in progress on `m5-renderer`:
+M5.1 is done. iOS is out of scope for now; see [iOS readiness](#ios-readiness).
 Measurements are in [benchmark.md](benchmark.md).
 
 This plan moves the Apple Silicon fork from OpenGL 2.1 to a native Metal renderer and replaces the
@@ -505,13 +504,19 @@ an OpenGL 4.1 core profile. Every change here is something the Metal backend nee
 it on GL keeps the game playable and comparable.
 
 ### M5.1 Close the driver boundary
+Done. The leaks and how each was closed:
+
 | Leak | Fix |
 |---|---|
-| `VertexBufferTCV` (`render/vertexBuffer.h`) is a concrete GL class. It is used from `tick.cpp`, `scene/beam_node.cpp`, `particle_system.cpp`, `line_trail_node.cpp`, `frame_line.cpp`, `font_ft2.cpp` and `scripts/bind_render.cpp:422,451`. | Keep the public shape (`fetch`/`request`/`draw`, `VertexTCV`), but make `fetch` go through `RenderDriver::fetchBatch(const RenderState*)`. Move the GL implementation into `gl_vertexBuffer.cpp`, behind the driver. |
-| `tick.cpp:688` casts to `glFrameBuffer` to get the depth texture | Add `Texture* RenderTarget::depthTexture()`, or a virtual `Texture::getDepthTexture()`. |
-| `render/lighting.cpp` calls `glLight*` directly, with up to `GL_MAX_LIGHTS` (8) lights | Add `RenderDriver::setLight(index, const LightDesc&)`, `setLightCount`, `setAmbient`. `lighting.cpp` becomes backend-neutral. |
-| `os/glfw_driver.cpp:242,495` call `glGetIntegerv(GL_VIEWPORT)` and `glViewport` | Route them through the render driver's `setScreenSize`. |
-| `Texture::getID()` returns a GL name | Audit its callers. Keep it for GL, and make it opaque elsewhere. |
+| `VertexBufferTCV` was a concrete GL class, used from `tick.cpp`, the scene nodes, `font_ft2.cpp` and `bind_render.cpp`. | The batching (`fetch`/`request`/`draw`, steps, shader caches) is backend-neutral in `render/vertexBuffer.cpp`. Only submission is per backend: `RenderDriver::drawBatch(vertices, indices, steps)`, which GL implements in `gl_vertexBuffer.cpp`. |
+| `tick.cpp` cast to `glFrameBuffer` to get the depth texture | `Texture::getDepthTexture()`, null for anything that isn't a render target. |
+| `render/lighting.cpp` called `glLight*` directly | `RenderDriver::setLight(index, const LightDesc*)`, null to disable, with `render::MAX_LIGHTS` (8). The old cap used `GL_MAX_LIGHTS`, which is the enum value 0x0D31, not 8. |
+| `os/glfw_driver.cpp` called `glGetIntegerv(GL_VIEWPORT)` and `glViewport` | Removed. `renderFrame` sets the framebuffer size and binds the target every frame, which sets the viewport. The window driver now includes GLFW with `GLFW_INCLUDE_NONE`. |
+| `Texture::getID()` returns a GL name | Only `gl_driver.cpp` calls it. It stays on the interface as a backend handle. |
+| `compat/gl.h` included by `bind_render.cpp` and `line_trail_node.cpp` | Removed; neither used it. |
+
+`initialization.cpp` still includes `render/gl_driver.h` for `createGLDriver()`. That is the backend
+factory, and M6 adds the Metal one beside it.
 
 ### M5.2 Move fixed-function state onto the CPU
 - **Matrices:**
@@ -811,8 +816,15 @@ Not planned yet. These notes keep the current work from blocking it.
    sample before M6.
 2. Exact `SRBuiltins` fields: generate them from a scan of all built-in shaders, rather than from
    memory of the GL spec.
-3. Do any script-side render bindings (`scripts/bind_render.cpp`) expose GL-specific behaviour beyond
-   `VertexBufferTCV`? Audit this in M5.1.
+3. Script render bindings: resolved in M5.1. They go through `RenderDriver` and `RenderState`, and
+   the bound enums are engine values, not GL ones. GL semantics the Metal backend has to reproduce:
+   - light positions are transformed by the model transform current when `light.enable()` runs;
+   - `PointLight.att_constant`/`att_linear` are bound but GL never applied them (only quadratic);
+   - `FC_Both` culls everything (Metal has no such mode: skip the draw);
+   - `TW_Clamp` is `GL_CLAMP` (Metal: clamp to border colour);
+   - `NormalizeNormals` and `DM_Line` wireframe.
+
+   No base-game material uses `Clamp`, `Both` or `NormalizeNormals`, but mods may.
 4. Retina UI scale: resolved. The UI is laid out in points and drawn at the backing scale factor, and
    `dGUIScale` stays a user setting on top.
 5. Does the effects RNG need a fixed seed option for the parity harness, or is there already one?

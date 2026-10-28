@@ -19,7 +19,6 @@
 #include <vector>
 extern char lockText[1024];
 
-bool glDirectStateAccess = false;
 
 namespace render {
 unsigned drawCalls = 0;
@@ -35,6 +34,21 @@ bool blend = false;
 //Whether fragments of <mat> go through the alpha test
 static inline bool usesAlphaTest(BaseMaterial mat) {
 	return mat == MAT_Alpha || mat == MAT_Font || mat == MAT_Overlay;
+}
+
+static inline GLint wrapMode(TextureWrap wrap) {
+	switch(wrap) {
+	case TW_Repeat:
+		return GL_REPEAT;
+	case TW_Clamp:
+		//GL_CLAMP blends in the border colour at the edge; core GL calls it this
+		return GL_CLAMP_TO_BORDER;
+	case TW_ClampEdge:
+		return GL_CLAMP_TO_EDGE;
+	case TW_Mirror:
+		return GL_MIRRORED_REPEAT;
+	NO_DEFAULT
+	}
 }
 
 static inline void setRenderFuncs(BaseMaterial mat, bool intermediate) {
@@ -92,7 +106,6 @@ class GLDriver : public RenderDriver {
 public:
 	const RenderState* pLastRenderState;
 	unsigned textureStage;
-	unsigned char activeType[RENDER_MAX_TEXTURES];
 	const RenderState* skybox;
 	const RenderMesh* skyboxMesh;
 	bool cleared;
@@ -275,12 +288,6 @@ public:
 
 		glUnbindProgram();
 
-		for(int i = 0; i < RENDER_MAX_TEXTURES; ++i) {
-			glActiveTexture(GL_TEXTURE0 + i);
-			glDisable(GL_TEXTURE_2D);
-			glDisable(GL_TEXTURE_CUBE_MAP);
-		}
-
 		glActiveTexture(GL_TEXTURE0);
 		textureStage = GL_TEXTURE0;
 
@@ -366,209 +373,56 @@ public:
 			if(activeRenderState.textures[i] == state.textures[i])
 				continue;
 			Texture* tex = state.textures[i];
+			if(tex == 0)
+				continue;
 
-			if(glDirectStateAccess) {
-				if(tex == 0) {
-					if(activeType[i] == TT_2D)
-						glDisablei(GL_TEXTURE_2D, i);
-					else
-						glDisablei(GL_TEXTURE_CUBE_MAP, i);
-				}
-				else {
-					auto type = tex->type;
-					GLenum glType;
-					if(type == TT_2D)
-						glType = GL_TEXTURE_2D;
-					else
-						glType = GL_TEXTURE_CUBE_MAP;
+			setTextureStage(GL_TEXTURE0 + i);
+			GLenum glType = tex->type == TT_2D ? GL_TEXTURE_2D : GL_TEXTURE_CUBE_MAP;
+			tex->bind();
 
-					if(activeRenderState.textures[i] == 0) {
-						glEnablei(glType, i);
-						activeType[i] = type;
-					}
-					else if(activeType[i] != type) {
-						if(type == TT_2D)
-							glDisablei(GL_TEXTURE_CUBE_MAP, i);
-						else
-							glDisablei(GL_TEXTURE_2D, i);
-						glEnablei(glType, i);
-						activeType[i] = type;
-					}
-				
-					auto texunit = GL_TEXTURE0 + i;
-					glBindMultiTextureEXT(texunit, glType, tex->getID());
-
-					//Wrapping settings
-					bool changed = false;
-					if(state.wrapHorizontal != tex->prevRenderState.wrapHorizontal) {
-						GLint mode;
-						switch(state.wrapHorizontal) {
-						case TW_Repeat:
-							mode = GL_REPEAT; break;
-						case TW_Clamp:
-							mode = GL_CLAMP; break;
-						case TW_ClampEdge:
-							mode = GL_CLAMP_TO_EDGE; break;
-						case TW_Mirror:
-							mode = GL_MIRRORED_REPEAT; break;
-						NO_DEFAULT
-						}
-						glMultiTexParameteriEXT(texunit, glType, GL_TEXTURE_WRAP_S, mode);
-						changed = true;
-					}
-
-					if(state.wrapVertical != tex->prevRenderState.wrapVertical) {
-						GLint mode;
-						switch(state.wrapVertical) {
-						case TW_Repeat:
-							mode = GL_REPEAT; break;
-						case TW_Clamp:
-							mode = GL_CLAMP; break;
-						case TW_ClampEdge:
-							mode = GL_CLAMP_TO_EDGE; break;
-						case TW_Mirror:
-							mode = GL_MIRRORED_REPEAT; break;
-						NO_DEFAULT
-						}
-						glMultiTexParameteriEXT(texunit, glType, GL_TEXTURE_WRAP_T, mode);
-						changed = true;
-					}
-
-					//Mipmap settings
-					if(state.filterMin != tex->prevRenderState.filterMin) {
-						GLint mode;
-						switch(state.filterMin) {
-						case TF_Nearest:
-							mode = tex->hasMipMaps ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST; break;
-						case TF_Linear:
-							mode = tex->hasMipMaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR; break;
-						NO_DEFAULT
-						}
-						glMultiTexParameteriEXT(texunit, glType, GL_TEXTURE_MIN_FILTER, mode);
-						changed = true;
-					}
-
-					if(state.filterMag != tex->prevRenderState.filterMag) {
-						//Magnification never uses mipmaps, a mipmap mode here is GL_INVALID_ENUM
-						GLint mode;
-						switch(state.filterMag) {
-						case TF_Nearest:
-							mode = GL_NEAREST; break;
-						case TF_Linear:
-							mode = GL_LINEAR; break;
-						NO_DEFAULT
-						}
-						glMultiTexParameteriEXT(texunit, glType, GL_TEXTURE_MAG_FILTER, mode);
-						changed = true;
-					}
-
-					//Update the previous render state
-					if(changed)
-						tex->prevRenderState = state;
-				}
+			//Wrapping settings
+			bool changed = false;
+			if(state.wrapHorizontal != tex->prevRenderState.wrapHorizontal) {
+				glTexParameteri(glType, GL_TEXTURE_WRAP_S, wrapMode(state.wrapHorizontal));
+				changed = true;
 			}
-			else {
-				setTextureStage(GL_TEXTURE0 + i);
 
-				if(tex == 0) {
-					if(activeType[i] == TT_2D)
-						glDisable(GL_TEXTURE_2D);
-					else
-						glDisable(GL_TEXTURE_CUBE_MAP);
-				}
-				else {
-					auto type = tex->type;
-					GLenum glType;
-					if(type == TT_2D)
-						glType = GL_TEXTURE_2D;
-					else
-						glType = GL_TEXTURE_CUBE_MAP;
-
-					if(activeRenderState.textures[i] == 0) {
-						glEnable(glType);
-						activeType[i] = type;
-					}
-					else if(activeType[i] != type) {
-						if(type == TT_2D)
-							glDisable(GL_TEXTURE_CUBE_MAP);
-						else
-							glDisable(GL_TEXTURE_2D);
-						glEnable(glType);
-						activeType[i] = type;
-					}
-
-					//Bind the texture
-					tex->bind();
-
-					//Wrapping settings
-					bool changed = false;
-					if(state.wrapHorizontal != tex->prevRenderState.wrapHorizontal) {
-						GLint mode;
-						switch(state.wrapHorizontal) {
-						case TW_Repeat:
-							mode = GL_REPEAT; break;
-						case TW_Clamp:
-							mode = GL_CLAMP; break;
-						case TW_ClampEdge:
-							mode = GL_CLAMP_TO_EDGE; break;
-						case TW_Mirror:
-							mode = GL_MIRRORED_REPEAT; break;
-						NO_DEFAULT
-						}
-						glTexParameteri(glType, GL_TEXTURE_WRAP_S, mode);
-						changed = true;
-					}
-
-					if(state.wrapVertical != tex->prevRenderState.wrapVertical) {
-						GLint mode;
-						switch(state.wrapVertical) {
-						case TW_Repeat:
-							mode = GL_REPEAT; break;
-						case TW_Clamp:
-							mode = GL_CLAMP; break;
-						case TW_ClampEdge:
-							mode = GL_CLAMP_TO_EDGE; break;
-						case TW_Mirror:
-							mode = GL_MIRRORED_REPEAT; break;
-						NO_DEFAULT
-						}
-						glTexParameteri(glType, GL_TEXTURE_WRAP_T, mode);
-						changed = true;
-					}
-
-					//Mipmap settings
-					if(state.filterMin != tex->prevRenderState.filterMin) {
-						GLint mode;
-						switch(state.filterMin) {
-						case TF_Nearest:
-							mode = tex->hasMipMaps ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST; break;
-						case TF_Linear:
-							mode = tex->hasMipMaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR; break;
-						NO_DEFAULT
-						}
-						glTexParameteri(glType, GL_TEXTURE_MIN_FILTER, mode);
-						changed = true;
-					}
-
-					if(state.filterMag != tex->prevRenderState.filterMag) {
-						//Magnification never uses mipmaps, a mipmap mode here is GL_INVALID_ENUM
-						GLint mode;
-						switch(state.filterMag) {
-						case TF_Nearest:
-							mode = GL_NEAREST; break;
-						case TF_Linear:
-							mode = GL_LINEAR; break;
-						NO_DEFAULT
-						}
-						glTexParameteri(glType, GL_TEXTURE_MAG_FILTER, mode);
-						changed = true;
-					}
-
-					//Update the previous render state
-					if(changed)
-						tex->prevRenderState = state;
-				}
+			if(state.wrapVertical != tex->prevRenderState.wrapVertical) {
+				glTexParameteri(glType, GL_TEXTURE_WRAP_T, wrapMode(state.wrapVertical));
+				changed = true;
 			}
+
+			//Mipmap settings
+			if(state.filterMin != tex->prevRenderState.filterMin) {
+				GLint mode;
+				switch(state.filterMin) {
+				case TF_Nearest:
+					mode = tex->hasMipMaps ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST; break;
+				case TF_Linear:
+					mode = tex->hasMipMaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR; break;
+				NO_DEFAULT
+				}
+				glTexParameteri(glType, GL_TEXTURE_MIN_FILTER, mode);
+				changed = true;
+			}
+
+			if(state.filterMag != tex->prevRenderState.filterMag) {
+				//Magnification never uses mipmaps, a mipmap mode here is GL_INVALID_ENUM
+				GLint mode;
+				switch(state.filterMag) {
+				case TF_Nearest:
+					mode = GL_NEAREST; break;
+				case TF_Linear:
+					mode = GL_LINEAR; break;
+				NO_DEFAULT
+				}
+				glTexParameteri(glType, GL_TEXTURE_MAG_FILTER, mode);
+				changed = true;
+			}
+
+			//Update the previous render state
+			if(changed)
+				tex->prevRenderState = state;
 		}
 
 		if(state.drawMode != activeRenderState.drawMode) {
@@ -1188,8 +1042,6 @@ public:
 
 		if(GLEW_ARB_seamless_cube_map)
 			glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
-		if(GLEW_EXT_direct_state_access)
-			glDirectStateAccess = true;
 
 		//Support strange sizes of image
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);

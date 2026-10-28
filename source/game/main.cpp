@@ -683,6 +683,13 @@ int main(int argc, char** argv) {
 			else
 				error("Error: load option requires a save name.");
 		}
+		else if(arg == "render-backend") {
+			++argi;
+			if(argi < argc)
+				renderBackendOverride = argv[argi];
+			else
+				error("Error: render-backend option requires gl or metal.");
+		}
 		else if(arg == "capture") {
 			++argi;
 			if(argi < argc) {
@@ -778,6 +785,7 @@ int main(int argc, char** argv) {
 				"--locale [LANGUAGE]      Start the game in a specific language.\n"
 				"--load [SAVEGAME]        Load the specified savegame on start.\n"
 				"--quickstart             Immediately start a new game, skipping the menu.\n"
+				"--render-backend [NAME]  Render with gl or metal, instead of the setting.\n"
 				"--capture [FOLDER]       Render fixed views to PNGs in FOLDER, then quit.\n"
 				"                         Captures the main menu, or views of the --load save.\n"
 				"--watch-resources        Automatically reload certain data files if changed.\n"

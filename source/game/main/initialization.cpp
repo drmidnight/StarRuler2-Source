@@ -2,6 +2,9 @@
 #include "util/threaded_loader.h"
 #include "util/name_generator.h"
 #include "render/gl_driver.h"
+#ifdef __APPLE__
+#include "render/mtl/mtl_driver.h"
+#endif
 #include "render/lighting.h"
 #include "main/profiler.h"
 #include "main/initialization.h"
@@ -80,6 +83,9 @@ bool useJIT = true;
 bool useJIT = false;
 #endif
 std::string loadSaveName;
+std::string renderBackendOverride;
+//Whether the Metal renderer was chosen, so the window needs no OpenGL context
+static bool metalRenderer = false;
 std::unordered_set<std::string> dlcList;
 
 //Poor mans steam-independent DLC checks
@@ -316,8 +322,23 @@ bool initGlobal(bool loadGraphics, bool createWindow) {
 	} );
 
 	if(load_resources) {
-		print("Initializing OpenGL Engine");
-		devices.render = render::createGLDriver();
+		std::string backend = renderBackendOverride;
+		if(backend.empty()) {
+			if(auto* setting = devices.settings.engine.getSetting("sRenderBackend"))
+				backend = *setting->getString();
+		}
+#ifdef __APPLE__
+		if(backend == "metal") {
+			print("Initializing Metal Engine");
+			devices.render = render::createMetalDriver();
+			metalRenderer = true;
+		}
+		else
+#endif
+		{
+			print("Initializing OpenGL Engine");
+			devices.render = render::createGLDriver();
+		}
 	}
 	else {
 		devices.render = nullptr;
@@ -1021,6 +1042,7 @@ void initMods(const std::vector<std::string>& mods) {
 			if(create_window) {
 				os::WindowData windat;
 				windat.verticalSync = 1;
+				windat.openGL = !metalRenderer;
 				bool cursorCapture = false;
 
 				auto* vsync = devices.settings.engine.getSetting("iVsync");
@@ -1655,6 +1677,7 @@ void loadEngineSettings() {
 		cat->settings.push_back(new NamedGeneric("bOverrideResolution", false));
 		cat->settings.push_back(new NamedGeneric("iVsync", 1));
 		cat->settings.push_back(new NamedGeneric("sMonitor", ""));
+		cat->settings.push_back(new NamedGeneric("sRenderBackend", "gl"));
 		cat->settings.push_back(new NamedGeneric("bShaderFallback", false));
 
 		auto* guiScale = new NamedGeneric("dGUIScale", 1.0);

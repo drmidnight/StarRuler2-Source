@@ -37,6 +37,8 @@ extern bool use_steam;
 extern bool monitor_files;
 extern bool fullscreen;
 extern bool useJIT;
+//The renderer to use instead of the sRenderBackend setting ("gl" or "metal"), if not empty
+extern std::string renderBackendOverride;
 extern std::string loadSaveName;
 void initGame();
 void destroyGame();

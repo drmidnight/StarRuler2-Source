@@ -170,6 +170,8 @@ ifdef USE_MACDEPS
 #Static vorbisfile needs its dependencies listed after it
 LDFLAGS += -lvorbis -logg
 LDFLAGS += -lglfw3
+#Shader translation for the Metal renderer
+LDFLAGS += -lglslang -lglslang-default-resource-limits -lspirv-cross-msl -lspirv-cross-glsl -lspirv-cross-core
 else ifeq ($(UNAME), Darwin)
 LDFLAGS += -lglfw
 endif
@@ -275,6 +277,7 @@ SOURCES = \
 	render/shader_states.cpp \
 	render/shader_shim.cpp \
 	render/shader_preprocess.cpp \
+	render/shader_translate.cpp \
 	\
 	resource/library.cpp \
 	resource/load_font.cpp \

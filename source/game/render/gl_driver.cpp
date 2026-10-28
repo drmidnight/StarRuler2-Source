@@ -1290,10 +1290,7 @@ public:
 		glScissor((int)(x * frameSize.x), (int)(y * frameSize.y), (int)(w * frameSize.x), (int)(h * frameSize.y));
 	}
 
-	//Batched geometry is clipped by the scissor current when it flushes, so it is
-	//flushed before every change
 	void pushScreenClip(const recti& box) override {
-		renderVertexBuffers();
 		if(viewportClips.empty())
 			glEnable(GL_SCISSOR_TEST);
 		viewportClips.push(box);
@@ -1303,7 +1300,6 @@ public:
 	void popScreenClip() override {
 		if(viewportClips.empty())
 			return;
-		renderVertexBuffers();
 		viewportClips.pop();
 		if(viewportClips.empty())
 			glDisable(GL_SCISSOR_TEST);

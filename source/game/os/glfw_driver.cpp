@@ -3,7 +3,8 @@
 #include "os/cocoa_window.h"
 #endif
 #include "compat/misc.h"
-#include "compat/gl.h"
+//The window driver makes no GL calls of its own
+#define GLFW_INCLUDE_NONE
 #include "GLFW/glfw3.h"
 #include "main/game_platform.h"
 #include "main/references.h"
@@ -343,10 +344,8 @@ public:
 		{
 			int x = 0, y = 0;
 			glfwGetWindowPos(window, &x, &y);
-			GLint viewport[4] = {0, 0, 0, 0};
-			glGetIntegerv(GL_VIEWPORT, viewport);
-			print("Window %dx%d at %d,%d, framebuffer %dx%d, GL surface %dx%d, %s", win_width, win_height, x, y, fb_width, fb_height,
-				viewport[2], viewport[3], borderless ? "borderless fullscreen" : data.mode == WM_Fullscreen ? "fullscreen" : "windowed");
+			print("Window %dx%d at %d,%d, framebuffer %dx%d, %s", win_width, win_height, x, y, fb_width, fb_height,
+				borderless ? "borderless fullscreen" : data.mode == WM_Fullscreen ? "fullscreen" : "windowed");
 		}
 		glfwSwapInterval( data.verticalSync );
 
@@ -688,12 +687,10 @@ void redirectWindowResize(GLFWwindow*, int w, int h) {
 	driver->win_width = w;
 	driver->win_height = h;
 	driver->updateFramebufferSize();
-	glViewport(0, 0, driver->fb_width, driver->fb_height);
 }
 
 void redirectFramebufferResize(GLFWwindow*, int, int) {
 	driver->updateFramebufferSize();
-	glViewport(0, 0, driver->fb_width, driver->fb_height);
 }
 
 void redirectSpecialKey(GLFWwindow*, int key, int scan, int action, int mods) {
@@ -794,7 +791,7 @@ void redirectMouseWheel(GLFWwindow*, double x, double y) {
 }
 
 void trackMouseOver(GLFWwindow*,int over) {
-	driver->mouseOver = over == GL_TRUE;
+	driver->mouseOver = over == GLFW_TRUE;
 }
 
 void glfwError(int code, const char* msg) {

@@ -485,7 +485,9 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 
 	render::Texture* rt = nullptr;
 	const render::Shader* shad = nullptr;
-	if(fsShader || scale_3d != 1.0) {
+	//The scene renders at the window's size in points, then scales up to the framebuffer
+	bool scaled = scale_3d != 1.0 || devices.driver->fb_width != screenSize.width || devices.driver->fb_height != screenSize.height;
+	if(fsShader || scaled) {
 		rt = renderTarget;
 		shad = fsShader;
 	}
@@ -600,14 +602,16 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 		vec2i uiArea;
 		if(ui_scale != 1.0) {
 			uiArea = vec2d(devices.driver->win_width, devices.driver->win_height) / ui_scale;
+			//Laid out in points, drawn at the framebuffer's pixel density
+			vec2i uiPixels = vec2d(uiArea) * devices.driver->pixelDensity();
 
 			if(uirt == 0) {
-				uirt = devices.render->createRenderTarget(uiArea);
+				uirt = devices.render->createRenderTarget(uiPixels);
 			}
 			else {
-				if(uirt->size != uiArea) {
+				if(uirt->size != uiPixels) {
 					delete uirt;
-					uirt = devices.render->createRenderTarget(uiArea);
+					uirt = devices.render->createRenderTarget(uiPixels);
 				}
 			}
 

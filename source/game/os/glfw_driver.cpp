@@ -96,7 +96,7 @@ public:
 
 	double frameTime, gameTime, gameSpeed;
 
-	GLFWDriver() : window(0), mouseOver(true), canLock(false), shouldLock(false), borderless(false), retinaFramebuffer(false) {
+	GLFWDriver() : window(0), mouseOver(true), canLock(false), shouldLock(false), borderless(false), retinaFramebuffer(true) {
 		glfwSetErrorCallback(glfwError);
 		glfwInit();
 		resetTimer();

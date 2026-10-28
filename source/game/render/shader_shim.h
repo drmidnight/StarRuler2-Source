@@ -11,6 +11,9 @@ enum ShaderStage {
 enum ShimTarget {
 	//GLSL 1.20 with built-in state read from sr_* uniforms and attributes
 	ST_GLSL120,
+	//GLSL 4.10 core, as OpenGL 4.1 core profiles and glslang take it. Fragment
+	//shaders apply the alpha test through sr_AlphaTest and sr_AlphaRef.
+	ST_GLSL410,
 };
 
 //Generic attribute locations of the vertex inputs, shared by every backend

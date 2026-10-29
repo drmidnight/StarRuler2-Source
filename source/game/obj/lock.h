@@ -95,3 +95,11 @@ void unlockGroup(LockGroup* lock);
 
 bool hasQueuedChildren();
 bool hasRemainingMessages();
+
+//Threads waiting for an async reply, or for messages to a group they hold, sleep until
+//something they could be waiting for happens. Read the serial, check the condition, then
+//wait with the serial read, so a wake between the check and the wait is not missed.
+unsigned lockWakeSerial();
+void waitForLockWake(unsigned seen);
+//Called when a message is queued, or a reply is ready or will never come
+void wakeLockWaiters();

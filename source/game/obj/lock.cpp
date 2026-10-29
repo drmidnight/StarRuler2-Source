@@ -462,6 +462,28 @@ void LockGroup::addMessage(ObjectMessage* message) {
 	messageCount.store(messages.size(), std::memory_order_relaxed);
 	messageLock.release();
 	scheduleMessages(this);
+	wakeLockWaiters();
+}
+
+//Waiters register before waiting, so waking costs nothing while nobody waits. Both
+//sides store then load the other's variable, so these must stay sequentially consistent.
+std::atomic<unsigned> lockWakes = 0;
+std::atomic<int> lockWaiters = 0;
+
+unsigned lockWakeSerial() {
+	return lockWakes.load();
+}
+
+void waitForLockWake(unsigned seen) {
+	++lockWaiters;
+	lockWakes.wait(seen);
+	--lockWaiters;
+}
+
+void wakeLockWaiters() {
+	lockWakes.fetch_add(1);
+	if(lockWaiters.load() != 0)
+		lockWakes.notify_all();
 }
 
 void LockGroup::add(Object* obj) {

@@ -4,8 +4,6 @@
 #include "files.h"
 #include <set>
 
-#include "render/gl_shader.h"
-
 namespace resource {
 
 threads::Mutex reloadTextureMutex;

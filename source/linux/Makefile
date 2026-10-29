@@ -151,7 +151,7 @@ else
 	LDFLAGS += -L$(BREW)/opt/glfw/lib
 endif
 
-	LDFLAGS += -framework OpenGL -framework Cocoa -framework IOKit
+	LDFLAGS += -framework Cocoa -framework IOKit
 	LDFLAGS += -framework CoreFoundation -framework OpenAL -framework QuartzCore
 	LDFLAGS += -framework Metal
 
@@ -263,12 +263,6 @@ SOURCES = \
 	render/driver.cpp \
 	render/font_fnt.cpp \
 	render/font_ft2.cpp \
-	render/gl_driver.cpp \
-	render/gl_framebuffer.cpp \
-	render/gl_mesh.cpp \
-	render/gl_shader.cpp \
-	render/gl_texture.cpp \
-	render/gl_vertexBuffer.cpp \
 	render/vertexBuffer.cpp \
 	render/lighting.cpp \
 	render/obj_loader.cpp \

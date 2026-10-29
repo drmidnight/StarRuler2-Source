@@ -2192,6 +2192,9 @@ void asCContext::CallInterfaceMethod(asCScriptFunction *func)
 #if !defined(HAVE_COMPUTED_GOTOS) || HAVE_COMPUTED_GOTOS == 0
 #undef asUSE_COMPUTED_GOTOS
 #define asUSE_COMPUTED_GOTOS 0
+#elif !defined(asUSE_COMPUTED_GOTOS)
+// Nothing defined this, so computed gotos were never used (fixed upstream in 2.38.0)
+#define asUSE_COMPUTED_GOTOS 1
 #endif
 
 #if asUSE_COMPUTED_GOTOS

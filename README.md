@@ -112,6 +112,10 @@ astc-encoder as static libraries in `deps/macos`, so the game has no Homebrew de
 `deps/macos` the makefile falls back to Homebrew's libraries, which is fine for running the game
 locally with `StarRuler2.sh`.
 
+GitHub Actions runs the same steps on every push to `master` (`.github/workflows/macos.yml`) and
+keeps the disk image as a build artifact. Pushing a tag starting with `v` also publishes it as a
+release.
+
 ## Differences with Commercial Version
 * The music is not part of the open source release of Star Ruler 2. The data/music/ directory from the commercial
   release can be copied directly into the data/ directory of an open-source build. The music will be detected and played.

@@ -753,24 +753,26 @@ public:
 		[encoder setTriangleFillMode:activeRenderState.drawMode == DM_Line ? MTLTriangleFillModeLines : MTLTriangleFillModeFill];
 
 		for(auto& slot : program->textures) {
-			unsigned unit = (unsigned)slot.unit < RENDER_MAX_TEXTURES ? slot.unit : 0;
-			auto* tex = dynamic_cast<MetalTexture*>(boundTextures[unit]);
-			id<MTLTexture> texture = tex ? tex->texture : nil;
-			id<MTLSamplerState> sampler = boundSamplers[unit];
-			bool matches = texture && (texture.textureType == MTLTextureTypeCube) == slot.cube;
-			if(!matches)
-				texture = slot.cube ? nil : ((MetalTexture*)blackTexture)->texture;
-			if(!sampler)
-				sampler = samplerFor(RenderState(), false);
-			if(!texture)
-				continue;
-			if(slot.vertexTexture >= 0) {
-				[encoder setVertexTexture:texture atIndex:slot.vertexTexture];
-				[encoder setVertexSamplerState:sampler atIndex:slot.vertexSampler];
-			}
-			if(slot.fragmentTexture >= 0) {
-				[encoder setFragmentTexture:texture atIndex:slot.fragmentTexture];
-				[encoder setFragmentSamplerState:sampler atIndex:slot.fragmentSampler];
+			for(unsigned e = 0; e < slot.units.size(); ++e) {
+				unsigned unit = (unsigned)slot.units[e] < RENDER_MAX_TEXTURES ? slot.units[e] : 0;
+				auto* tex = dynamic_cast<MetalTexture*>(boundTextures[unit]);
+				id<MTLTexture> texture = tex ? tex->texture : nil;
+				id<MTLSamplerState> sampler = boundSamplers[unit];
+				bool matches = texture && (texture.textureType == MTLTextureTypeCube) == slot.cube;
+				if(!matches)
+					texture = slot.cube ? nil : ((MetalTexture*)blackTexture)->texture;
+				if(!sampler)
+					sampler = samplerFor(RenderState(), false);
+				if(!texture)
+					continue;
+				if(slot.vertexTexture >= 0) {
+					[encoder setVertexTexture:texture atIndex:slot.vertexTexture + e];
+					[encoder setVertexSamplerState:sampler atIndex:slot.vertexSampler + e];
+				}
+				if(slot.fragmentTexture >= 0) {
+					[encoder setFragmentTexture:texture atIndex:slot.fragmentTexture + e];
+					[encoder setFragmentSamplerState:sampler atIndex:slot.fragmentSampler + e];
+				}
 			}
 		}
 

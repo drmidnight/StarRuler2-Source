@@ -94,6 +94,8 @@ int ShaderProgram::compile() {
 				index = (unsigned)textures.size();
 				textures.push_back(TextureSlot());
 				textures.back().cube = tex.cube;
+				//Unset samplers read unit 0, as GL's default sampler value did
+				textures.back().units.assign(std::max(1u, tex.arraySize), 0);
 				texturesByName[tex.name] = index;
 			}
 			else {
@@ -317,8 +319,11 @@ void Shader::apply(size_t index, const void* data) const {
 	const Variable& var = vars[index];
 	auto* prog = metalProgram();
 	if(varTextures[index] >= 0) {
-		//Samplers choose which texture unit they read
-		prog->textures[varTextures[index]].unit = *(const int*)data;
+		//Samplers choose which texture unit they read, one per array element
+		auto& units = prog->textures[varTextures[index]].units;
+		const int* values = (const int*)data;
+		for(size_t i = 0; i < units.size() && i < var.count; ++i)
+			units[i] = values[i];
 		return;
 	}
 	if(auto* uniform = varUniforms[index]) {

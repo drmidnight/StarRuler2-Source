@@ -121,12 +121,13 @@ public:
 	//The uniform values, kept between draws as GL kept them in the program
 	std::vector<unsigned char> uniformData;
 
-	//A sampler and the texture unit it reads, which shader variables choose
+	//A sampler, or array of samplers, and the texture units each element reads, which
+	//shader variables choose
 	struct TextureSlot {
 		bool cube;
 		int vertexTexture = -1, vertexSampler = -1;
 		int fragmentTexture = -1, fragmentSampler = -1;
-		int unit = 0;
+		std::vector<int> units;
 	};
 	std::vector<TextureSlot> textures;
 	std::unordered_map<std::string, unsigned> texturesByName;

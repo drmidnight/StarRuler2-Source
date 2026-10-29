@@ -888,6 +888,17 @@ GL 4.1. No missing features. Metal becomes the default.
 
 ## M7: Metal-only wins, then remove OpenGL
 
+**Script cost first (done on `script-perf`):** scripts were about 85% of the main thread, all in the
+interpreter, since the game's JIT is x86 only.
+- The interpreter now uses computed gotos (`as_context.cpp`; AngelScript 2.37 never enabled them, fixed
+  upstream in 2.38). `ExecuteNext` lost about 26% of its samples.
+- Counting native calls showed territory borders made 44% of them: two calls per vertex, every frame.
+  `drawPolygonRing` draws a whole ring in one call, and native calls in the capture run fell by 40%.
+- Late game in the galaxy view now holds 120 fps (p99 9.1 ms) with the main thread at 27% of a core.
+  Further work had diminishing returns and is parked: the galaxy gas sprites (about 5 native calls
+  each per frame), the design screen's hex grid, and the Angelsea JIT (MIR based, experimental on
+  macOS arm64, not thread-safe across engines).
+
 Do these in order of measured benefit:
 
 1. **Draw ordering:** sort opaque draws by pipeline, then texture set, then mesh. Today

@@ -21,19 +21,20 @@ happened, and attach `~/.starruler2/log.txt` if the game crashed.
   - Builds and runs natively on Apple Silicon (macOS 13 or later), compiled as C++20.
   - AngelScript upgraded to 2.37.0, with the game scripts and add-ons adapted.
   - Dependencies are built as static libraries, so no Homebrew is needed. The dependencies include GLFW 3.4,
-    glslang and SPIRV-Cross.
+    glslang, SPIRV-Cross and astc-encoder.
   - Packaged as an ad-hoc signed .app and disk image, with a dSYM for reading crash logs.
+  - GitHub Actions builds the disk image on every push, and publishes a release for each version tag.
   - Thread and address sanitizer builds, Instruments signposts, and threading tests.
 
   Rendering
-  - A Metal renderer, now the default, with OpenGL 4.1 core as the alternative. You choose between them in
-    the options or with --render-backend.
+  - Metal is the only renderer. The OpenGL renderer and the OpenGL framework are gone.
   - The renderer-independent code moved into a shared BaseDriver.
-  - Old GL shaders are translated to GLSL 4.10 and Metal, and a shader stands in for the old fixed-function
-    pipeline.
+  - Old GL shaders are translated to Metal, and a shader stands in for the old fixed-function pipeline.
   - Rendering at Retina resolution, with fonts drawn at the screen's pixel density.
-  - On Metal, textures load on background threads, and frames in flight are capped at 3.
-  - A --capture mode and a comparison tool check that Metal renders the same as GL.
+  - Textures load on background threads, and frames in flight are capped at 3.
+  - Large textures are compressed to ASTC once and cached in the profile, so later starts load faster and
+    textures use a quarter of the memory. The bCompressTextures setting turns this off.
+  - A --capture mode and a comparison tool check rendering against reference captures.
 
   Threading and performance
   - New threading primitives, plus a worker pool with priority lanes that drives the simulation.
@@ -43,12 +44,20 @@ happened, and attach `~/.starruler2/log.txt` if the game crashed.
   - Data races fixed: atomic flags, async call returns, vision sharing, the threaded loader and script
     garbage collection.
   - The frame limiter supports refresh rates above 60 Hz. The galaxy view now holds a steady 120 fps.
+  - The script interpreter dispatches with computed gotos, and territory borders draw in one call per ring.
+  - Script threads no longer spin while waiting for the next frame, which saves about a quarter of the CPU
+    in large fleet battles.
 
   Window and input
   - GLFW 3.4, with borderless fullscreen above the menu bar and Cmd+Enter to toggle it. The fullscreen
     option applies without a restart.
   - Trackpad: smooth scroll-zoom, pinch to zoom, and an option to scroll to pan.
   - Gamepad support through the window driver, and a fix for the backtick key.
+  - Tooltips no longer reset on tiny trackpad movements, so they show reliably in the diplomacy screen.
+
+  Testing
+  - The ch_battle cheat spawns two large fleets at war at your homeworld, for testing large fights.
+  - The delay console command runs a command a number of frames later, so autoexec.txt can make saves.
 
   Fixes
   - Mod folder paths, symlink scanning, monotonic game timing, a --test-scripts failure exit, and script

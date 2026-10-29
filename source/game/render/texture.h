@@ -28,6 +28,9 @@ public:
 	virtual void loadFinish(bool mipmap, unsigned lod = 0) = 0;
 
 	virtual void load(Image& image, bool mipmap = true, bool cachePixels = false) = 0;
+	//Loads the image on the calling thread, which needn't be the render thread, or returns
+	//false when the renderer can't. The texture changes once the driver applies the load.
+	virtual bool loadOffThread(Image& image, bool mipmap, bool cachePixels) { return false; }
 	virtual void save(Image& image) const = 0;
 	virtual void bind() = 0;
 	virtual unsigned getID() const = 0;

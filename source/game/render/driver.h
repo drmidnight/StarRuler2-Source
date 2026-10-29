@@ -109,6 +109,9 @@ public:
 
 	//Hands the frame to the display; drivers whose window swaps the frame need do nothing
 	virtual void presentFrame() {}
+	//Puts textures loaded off the render thread into use, returning whether there were any
+	virtual bool applyTextureLoads() { return false; }
+	virtual bool hasTextureLoads() const { return false; }
 	//Vertical sync for drivers that present their own frames: 0 is off, otherwise
 	//the number of display refreshes per frame
 	virtual void setVerticalSync(int frames) {}

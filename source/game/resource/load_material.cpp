@@ -210,9 +210,19 @@ bool Library::processImages(int maxPriority, int amount) {
 
 		++processed;
 
-		queuedTexturesLock.lock();
-		queuedTextures.push(elem);
-		queuedTexturesLock.release();
+		//Renderers that can load textures on this thread skip the render thread's queue
+		if(elem.tex && elem.images.size() == 1 && elem.tex->loadOffThread(*elem.images[0], elem.mipmap, elem.cachePixels)) {
+			elem.clearImages();
+			if(!elem.filename.empty()) {
+				threads::Lock lock(queuedTexturesLock);
+				texture_files[elem.filename] = elem.tex;
+			}
+		}
+		else {
+			queuedTexturesLock.lock();
+			queuedTextures.push(elem);
+			queuedTexturesLock.release();
+		}
 
 		if(processed >= amount)
 			break;
@@ -222,7 +232,7 @@ bool Library::processImages(int maxPriority, int amount) {
 }
 
 bool Library::hasQueuedTextures() {
-	return !queuedTextures.empty();
+	return !queuedTextures.empty() || (devices.render && devices.render->hasTextureLoads());
 }
 
 bool QueuedTexture::load(unsigned maxBytes, unsigned& loadedBytes) {
@@ -276,7 +286,7 @@ bool QueuedTexture::load(unsigned maxBytes, unsigned& loadedBytes) {
 }
 
 bool Library::processTextures(int maxPriority, bool singleFrame) {
-	bool processedAny = false;
+	bool processedAny = devices.render && devices.render->applyTextureLoads();
 	const unsigned frameByteLimit = 1024 * 1024 * 4;
 	int64_t byteLimit = singleFrame ? frameByteLimit : 0xffffffff;
 

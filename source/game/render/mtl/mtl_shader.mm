@@ -123,6 +123,7 @@ int ShaderProgram::compile() {
 			error("%s: unknown vertex input %s", vertexFile.c_str(), input.name.c_str());
 	}
 
+	findBuiltins();
 	valid = true;
 	return 0;
 }
@@ -176,24 +177,69 @@ static bool invertMatrix(const double* m, double* inv) {
 	return true;
 }
 
+void ShaderProgram::findBuiltins() {
+	auto& b = builtins;
+	b.modelView = findUniform("sr_ModelView");
+	b.projection = findUniform("sr_Projection");
+	b.modelViewProjection = findUniform("sr_ModelViewProjection");
+	b.normalMatrix = findUniform("sr_NormalMatrix");
+	b.projectionInverse = findUniform("sr_ProjectionInverse");
+	b.flipY = findUniform("sr_FlipY");
+	b.usesMatrices = b.modelView || b.projection || b.modelViewProjection || b.normalMatrix
+		|| b.projectionInverse || b.flipY;
+
+	b.usesLights = false;
+	for(unsigned i = 0; i < MAX_LIGHTS; ++i) {
+		std::string prefix = "sr_LightSource[" + std::to_string(i) + "].";
+		auto& light = b.lights[i];
+		light.ambient = findUniform(prefix + "ambient");
+		light.diffuse = findUniform(prefix + "diffuse");
+		light.specular = findUniform(prefix + "specular");
+		light.position = findUniform(prefix + "position");
+		light.constantAttenuation = findUniform(prefix + "constantAttenuation");
+		light.linearAttenuation = findUniform(prefix + "linearAttenuation");
+		light.quadraticAttenuation = findUniform(prefix + "quadraticAttenuation");
+		if(light.ambient || light.diffuse || light.specular || light.position
+			|| light.constantAttenuation || light.linearAttenuation || light.quadraticAttenuation)
+			b.usesLights = true;
+	}
+	b.lightModelAmbient = findUniform("sr_LightModel.ambient");
+	b.lightEnabled = findUniform("sr_LightEnabled");
+	if(b.lightModelAmbient || b.lightEnabled)
+		b.usesLights = true;
+
+	b.emission = findUniform("sr_FrontMaterial.emission");
+	b.ambient = findUniform("sr_FrontMaterial.ambient");
+	b.diffuse = findUniform("sr_FrontMaterial.diffuse");
+	b.specular = findUniform("sr_FrontMaterial.specular");
+	b.shininess = findUniform("sr_FrontMaterial.shininess");
+	b.fixedLighting = findUniform("sr_FixedLighting");
+	b.fixedTexture = findUniform("sr_FixedTexture");
+	b.alphaTest = findUniform("sr_AlphaTest");
+	b.alphaRef = findUniform("sr_AlphaRef");
+	b.usesMaterial = b.emission || b.ambient || b.diffuse || b.specular || b.shininess
+		|| b.fixedLighting || b.fixedTexture || b.alphaTest || b.alphaRef;
+}
+
 void ShaderProgram::updateBuiltins(const BuiltinState& state) {
-	if(matrixSerial != state.matrixSerial) {
+	auto& b = builtins;
+	if(b.usesMatrices && matrixSerial != state.matrixSerial) {
 		matrixSerial = state.matrixSerial;
 		float f[16];
 		const double* mv = state.modelView.m;
-		if(auto* u = findUniform("sr_ModelView")) {
+		if(b.modelView) {
 			toFloats(mv, f);
-			write(*u, f, 4, 1, 4);
+			write(*b.modelView, f, 4, 1, 4);
 		}
-		if(auto* u = findUniform("sr_Projection")) {
+		if(b.projection) {
 			toFloats(state.projection.m, f);
-			write(*u, f, 4, 1, 4);
+			write(*b.projection, f, 4, 1, 4);
 		}
-		if(auto* u = findUniform("sr_ModelViewProjection")) {
+		if(b.modelViewProjection) {
 			toFloats((state.projection * state.modelView).m, f);
-			write(*u, f, 4, 1, 4);
+			write(*b.modelViewProjection, f, 4, 1, 4);
 		}
-		if(auto* u = findUniform("sr_NormalMatrix")) {
+		if(b.normalMatrix) {
 			//Inverse transpose of the upper 3x3: its cofactor matrix over the determinant
 			double c[9];
 			c[0] = mv[5]*mv[10] - mv[9]*mv[6];
@@ -210,71 +256,71 @@ void ShaderProgram::updateBuiltins(const BuiltinState& state) {
 			float n[9];
 			for(unsigned i = 0; i < 9; ++i)
 				n[i] = (float)(c[i] * scale);
-			write(*u, n, 3, 1, 3);
+			write(*b.normalMatrix, n, 3, 1, 3);
 		}
-		if(auto* u = findUniform("sr_FlipY"))
-			write(*u, &state.flipY, 1, 1);
-		if(auto* u = findUniform("sr_ProjectionInverse")) {
+		if(b.flipY)
+			write(*b.flipY, &state.flipY, 1, 1);
+		if(b.projectionInverse) {
 			double inv[16];
 			if(invertMatrix(state.projection.m, inv)) {
 				toFloats(inv, f);
-				write(*u, f, 4, 1, 4);
+				write(*b.projectionInverse, f, 4, 1, 4);
 			}
 		}
 	}
 
-	if(lightSerial != state.lightSerial) {
+	if(b.usesLights && lightSerial != state.lightSerial) {
 		lightSerial = state.lightSerial;
 		const Colorf noAmbient(0.f, 0.f, 0.f, 1.f);
 		for(unsigned i = 0; i < MAX_LIGHTS; ++i) {
 			auto& light = state.lights[i];
-			std::string prefix = "sr_LightSource[" + std::to_string(i) + "].";
-			if(auto* u = findUniform(prefix + "ambient"))
-				write(*u, &noAmbient, 4, 1);
-			if(auto* u = findUniform(prefix + "diffuse"))
-				write(*u, &light.diffuse, 4, 1);
-			if(auto* u = findUniform(prefix + "specular"))
-				write(*u, &light.specular, 4, 1);
-			if(auto* u = findUniform(prefix + "position"))
-				write(*u, &light.position, 4, 1);
-			if(auto* u = findUniform(prefix + "constantAttenuation"))
-				write(*u, &light.constantAttenuation, 1, 1);
-			if(auto* u = findUniform(prefix + "linearAttenuation"))
-				write(*u, &light.linearAttenuation, 1, 1);
-			if(auto* u = findUniform(prefix + "quadraticAttenuation"))
-				write(*u, &light.quadraticAttenuation, 1, 1);
+			auto& u = b.lights[i];
+			if(u.ambient)
+				write(*u.ambient, &noAmbient, 4, 1);
+			if(u.diffuse)
+				write(*u.diffuse, &light.diffuse, 4, 1);
+			if(u.specular)
+				write(*u.specular, &light.specular, 4, 1);
+			if(u.position)
+				write(*u.position, &light.position, 4, 1);
+			if(u.constantAttenuation)
+				write(*u.constantAttenuation, &light.constantAttenuation, 1, 1);
+			if(u.linearAttenuation)
+				write(*u.linearAttenuation, &light.linearAttenuation, 1, 1);
+			if(u.quadraticAttenuation)
+				write(*u.quadraticAttenuation, &light.quadraticAttenuation, 1, 1);
 		}
-		if(auto* u = findUniform("sr_LightModel.ambient"))
-			write(*u, &state.lightModelAmbient, 4, 1);
-		if(auto* u = findUniform("sr_LightEnabled")) {
+		if(b.lightModelAmbient)
+			write(*b.lightModelAmbient, &state.lightModelAmbient, 4, 1);
+		if(b.lightEnabled) {
 			int enabled[MAX_LIGHTS];
 			for(unsigned i = 0; i < MAX_LIGHTS; ++i)
 				enabled[i] = state.lights[i].enabled ? 1 : 0;
-			write(*u, enabled, 1, MAX_LIGHTS);
+			write(*b.lightEnabled, enabled, 1, MAX_LIGHTS);
 		}
 	}
 
-	if(materialSerial != state.materialSerial) {
+	if(b.usesMaterial && materialSerial != state.materialSerial) {
 		materialSerial = state.materialSerial;
 		const Colorf noEmission(0.f, 0.f, 0.f, 1.f);
-		if(auto* u = findUniform("sr_FrontMaterial.emission"))
-			write(*u, &noEmission, 4, 1);
-		if(auto* u = findUniform("sr_FrontMaterial.ambient"))
-			write(*u, &state.materialAmbient, 4, 1);
-		if(auto* u = findUniform("sr_FrontMaterial.diffuse"))
-			write(*u, &state.materialDiffuse, 4, 1);
-		if(auto* u = findUniform("sr_FrontMaterial.specular"))
-			write(*u, &state.materialSpecular, 4, 1);
-		if(auto* u = findUniform("sr_FrontMaterial.shininess"))
-			write(*u, &state.materialShininess, 1, 1);
-		if(auto* u = findUniform("sr_FixedLighting"))
-			write(*u, &state.fixedLighting, 1, 1);
-		if(auto* u = findUniform("sr_FixedTexture"))
-			write(*u, &state.fixedTexture, 1, 1);
-		if(auto* u = findUniform("sr_AlphaTest"))
-			write(*u, &state.alphaTest, 1, 1);
-		if(auto* u = findUniform("sr_AlphaRef"))
-			write(*u, &state.alphaRef, 1, 1);
+		if(b.emission)
+			write(*b.emission, &noEmission, 4, 1);
+		if(b.ambient)
+			write(*b.ambient, &state.materialAmbient, 4, 1);
+		if(b.diffuse)
+			write(*b.diffuse, &state.materialDiffuse, 4, 1);
+		if(b.specular)
+			write(*b.specular, &state.materialSpecular, 4, 1);
+		if(b.shininess)
+			write(*b.shininess, &state.materialShininess, 1, 1);
+		if(b.fixedLighting)
+			write(*b.fixedLighting, &state.fixedLighting, 1, 1);
+		if(b.fixedTexture)
+			write(*b.fixedTexture, &state.fixedTexture, 1, 1);
+		if(b.alphaTest)
+			write(*b.alphaTest, &state.alphaTest, 1, 1);
+		if(b.alphaRef)
+			write(*b.alphaRef, &state.alphaRef, 1, 1);
 	}
 }
 

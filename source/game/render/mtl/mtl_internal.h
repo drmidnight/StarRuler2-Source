@@ -138,6 +138,22 @@ public:
 	//Pipelines for each blend mode and vertex layout
 	std::unordered_map<unsigned, id<MTLRenderPipelineState>> pipelines;
 
+	//The built-in uniforms the program reads, found once when it compiles
+	struct LightUniforms {
+		const Uniform *ambient, *diffuse, *specular, *position;
+		const Uniform *constantAttenuation, *linearAttenuation, *quadraticAttenuation;
+	};
+	struct Builtins {
+		const Uniform *modelView, *projection, *modelViewProjection, *normalMatrix;
+		const Uniform *projectionInverse, *flipY;
+		LightUniforms lights[MAX_LIGHTS];
+		const Uniform *lightModelAmbient, *lightEnabled;
+		const Uniform *emission, *ambient, *diffuse, *specular, *shininess;
+		const Uniform *fixedLighting, *fixedTexture, *alphaTest, *alphaRef;
+		bool usesMatrices, usesLights, usesMaterial;
+	} builtins = {};
+	void findBuiltins();
+
 	unsigned matrixSerial = 0, lightSerial = 0, materialSerial = 0;
 	const render::Shader* lastShader = nullptr;
 	unsigned lastBoundFrame = 0xffffffff;

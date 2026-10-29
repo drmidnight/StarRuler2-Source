@@ -602,6 +602,44 @@ static void poly3_coord_uv(const vec3d& pos, const vec2f& uv) {
 	}
 }
 
+//Writes a band along a closed ring of (outer, inner) vertex pairs, two triangles per pair, in
+//one call instead of one per point. U is 1 on the outer edge and 0 on the inner one. Along the
+//ring, V goes from 0 to farV across each pair, or follows the outer edge's length.
+static void poly3_ring(const CScriptArray* ring, double farV, bool vByDistance) {
+	if(!ring)
+		return;
+	unsigned cnt = ring->GetSize();
+	if(cnt < 2)
+		return;
+
+	const vec3d& cam = devices.render->cam_pos;
+	auto point = [&](unsigned index, float u, float v) {
+		auto* vert = getNextVertex();
+		if(!vert)
+			return false;
+		vert->col = vertCol;
+		vert->uv = vec2f(u, v);
+		vert->pos = vec3f(*(const vec3d*)ring->At(index % cnt) - cam);
+		return true;
+	};
+
+	double offset = 0;
+	for(unsigned i = 0; i < cnt; i += 2) {
+		float v0 = 0.f, v1 = (float)farV;
+		if(vByDistance) {
+			v0 = (float)offset;
+			offset += ((const vec3d*)ring->At(i))->distanceTo(*(const vec3d*)ring->At((i + 2) % cnt));
+			v1 = (float)offset;
+		}
+
+		if(!point(i, 1.f, v0) || !point(i + 2, 1.f, v1) || !point(i + 1, 0.f, v0)
+			|| !point(i + 2, 1.f, v1) || !point(i + 3, 0.f, v1) || !point(i + 1, 0.f, v0)) {
+			scripts::throwException("Attempted to write to more vertices than were allocated.");
+			return;
+		}
+	}
+}
+
 static void poly3_coord_uvc(const vec3d& pos, const vec2f& uv, const Color& col) {
 	if(auto* vert = getNextVertex()) {
 		vertCol = col;
@@ -2139,6 +2177,7 @@ void RegisterRenderBinds(bool decl, bool isMenu, bool server) {
 	bind("void drawPolygonPoint(const vec3d &in, const vec2f& in)", asFUNCTION(poly3_coord_uv));
 	bind("void drawPolygonPoint(const vec3d &in, const Color&in)", asFUNCTION(poly3_coord_c));
 	bind("void drawPolygonPoint(const vec3d &in, const vec2f& in, const Color&in)", asFUNCTION(poly3_coord_uvc));
+	bind("void drawPolygonRing(const array<vec3d>@ ring, double farV = 0, bool vByDistance = false)", asFUNCTION(poly3_ring));
 
 	bind("void drawLine(const vec2i&in from, const vec2i& to, int size = 1, const Material@ mat = null)", asFUNCTION(draw_line));
 	bind("void drawLine(const vec2i&in from, const vec2i& to, const Color&in color, int size = 1, const Material@ mat = null)", asFUNCTION(draw_line_c));

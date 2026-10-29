@@ -6,6 +6,7 @@
 
 #include "../source/as_scriptengine.h"
 #include "../source/as_scriptobject.h"
+#include <algorithm>
 
 extern void initNewThread();
 extern void cleanupThread();
@@ -550,13 +551,17 @@ threads::threadreturn threadcall runScriptThread(void* arg) {
 		thread.manager->scriptThreadEnd();
 		//Sleep until 2ms before the next timer. Game time stands still while paused,
 		//so then check back about once a frame.
-		if(useGameTime && devices.driver->getGameSpeed() < 0.01)
+		double speed = useGameTime ? devices.driver->getGameSpeed() : 1.0;
+		if(speed < 0.01)
 			threads::sleep(16);
+		else if(nextTime > curTime) {
+			//Game time only moves once a frame, so a timer due within this frame
+			//must still sleep, or the thread spins until the next frame starts
+			int sleepTime = (1000.0 * (nextTime - curTime) / speed) - 2.0;
+			threads::sleep((unsigned)std::max(sleepTime, 1));
+		}
 		else {
-			int sleepTime = (1000.0 * (nextTime - curTime)) - 2.0;
-			if(sleepTime < 0)
-				sleepTime = 0;
-			threads::sleep((unsigned)sleepTime);
+			threads::sleep(0);
 		}
 	}
 

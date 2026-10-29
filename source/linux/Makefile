@@ -381,7 +381,7 @@ master_server: $(BINDIR)/$(MS_BIN)
 #Dependency files to take care of header changes
 $(OBJDIR)/%.d: $(SRCDIR)/%.cpp
 	@mkdir -p $(dir $@)
-	@$(CC) $(CXXFLAGS) -MM -MT "$(@:.d=.o)" $< >> $@
+	@$(CC) $(CXXFLAGS) -MM -MP -MT "$(@:.d=.o)" $< >> $@
 
 #Object files are compiled separately
 $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
@@ -391,7 +391,7 @@ $(OBJDIR)/%.o: $(SRCDIR)/%.cpp
 
 $(OBJDIR)/%.d: $(SRCDIR)/%.mm
 	@mkdir -p $(dir $@)
-	@$(CC) $(CXXFLAGS) $(OBJCFLAGS) -MM -MT "$(@:.d=.o)" $< >> $@
+	@$(CC) $(CXXFLAGS) $(OBJCFLAGS) -MM -MP -MT "$(@:.d=.o)" $< >> $@
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.mm
 	@mkdir -p $(dir $@)

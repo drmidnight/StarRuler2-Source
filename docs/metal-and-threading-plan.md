@@ -777,10 +777,14 @@ Progress on `m6-metal`:
   readback for captures. Render targets are drawn with clip space flipped (`sr_FlipY`, applied by the
   shim's vertex epilogue), so their contents, sampling and readback match GL's orientation.
 - **Parity:** all seven capture views match GL within the run-to-run noise (menu identical).
-- **To do:** performance (uniforms are looked up by name per draw; state is rebound per draw), the
-  translation cache and pipeline pre-creation (first launch compiles every shader; macOS caches the
-  compiled MSL after that), off-thread texture uploads, debug labels, a console switch, and
-  `contentsScale` when the window changes screens.
+- **Done since:** built-in uniforms are found once per program, unchanged encoder state is skipped,
+  objects have debug labels, and `contentsScale` follows the window. Textures load on the loader
+  thread that decoded them (`Texture::loadOffThread`), and the main thread only swaps them in from
+  `processTextures`, so Metal has no per-frame upload budget.
+- **Measured, not needed now:** draw-time pipeline creation with a warm cache costs 0.1-0.2 ms per
+  pipeline, 31 pipelines and 3 ms in total for the benchmark capture run, so pipeline pre-creation and
+  the translation cache wait until a cold start shows a problem.
+- **To do:** benchmark against GL again now that the script waits block, then make Metal the default.
 - **GL got slower during M6** (seen in play, not measured yet). Suspects: the `BaseDriver` split and
   the `sr_FlipY` uniform GL now uploads with every matrix change.
 

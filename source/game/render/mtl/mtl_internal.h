@@ -120,6 +120,8 @@ public:
 	unsigned uniformSize = 0;
 	//The uniform values, kept between draws as GL kept them in the program
 	std::vector<unsigned char> uniformData;
+	//Whether the values changed since the driver last sent them
+	bool uniformsChanged = true;
 
 	//A sampler, or array of samplers, and the texture units each element reads, which
 	//shader variables choose

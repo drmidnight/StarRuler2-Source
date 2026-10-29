@@ -115,6 +115,19 @@ public:
 	id<MTLTexture> screenDepth = nil;
 	id<MTLRenderCommandEncoder> encoder = nil;
 
+	//What the open encoder has bound, so draws only send what changed
+	struct EncoderState {
+		id<MTLRenderPipelineState> pipeline;
+		id<MTLDepthStencilState> depth;
+		int cull, fill;
+		const ShaderProgram* uniforms;
+		id<MTLTexture> vertexTextures[32], fragmentTextures[32];
+		id<MTLSamplerState> vertexSamplers[16], fragmentSamplers[16];
+		id<MTLBuffer> vertexData;
+		NSUInteger vertexOffset;
+	};
+	EncoderState bound;
+
 	//Where drawing goes: a render target, or the screen when null
 	RenderTarget* target = nullptr;
 	//Clears the next pass starts with
@@ -284,6 +297,9 @@ public:
 		[encoder setFrontFacingWinding:target ? MTLWindingClockwise : MTLWindingCounterClockwise];
 		[encoder setViewport:(MTLViewport){0, 0, (double)color.width, (double)color.height, 0, 1}];
 		applyClip(color.width, color.height);
+		bound = EncoderState();
+		bound.cull = bound.fill = -1;
+		[encoder setVertexBuffer:defaults offset:0 atIndex:defaultsBuffer];
 		return true;
 	}
 
@@ -743,14 +759,26 @@ public:
 			return false;
 		program->updateBuiltins(builtins);
 
-		[encoder setRenderPipelineState:pipeline];
-		[encoder setDepthStencilState:depthStateFor(activeRenderState)];
-		switch(activeRenderState.culling) {
-			case FC_Front: [encoder setCullMode:MTLCullModeFront]; break;
-			case FC_Back: [encoder setCullMode:MTLCullModeBack]; break;
-			default: [encoder setCullMode:MTLCullModeNone]; break;
+		if(pipeline != bound.pipeline) {
+			[encoder setRenderPipelineState:pipeline];
+			bound.pipeline = pipeline;
 		}
-		[encoder setTriangleFillMode:activeRenderState.drawMode == DM_Line ? MTLTriangleFillModeLines : MTLTriangleFillModeFill];
+		id<MTLDepthStencilState> depth = depthStateFor(activeRenderState);
+		if(depth != bound.depth) {
+			[encoder setDepthStencilState:depth];
+			bound.depth = depth;
+		}
+		int cull = activeRenderState.culling == FC_Front ? MTLCullModeFront
+			: activeRenderState.culling == FC_Back ? MTLCullModeBack : MTLCullModeNone;
+		if(cull != bound.cull) {
+			[encoder setCullMode:(MTLCullMode)cull];
+			bound.cull = cull;
+		}
+		int fill = activeRenderState.drawMode == DM_Line ? MTLTriangleFillModeLines : MTLTriangleFillModeFill;
+		if(fill != bound.fill) {
+			[encoder setTriangleFillMode:(MTLTriangleFillMode)fill];
+			bound.fill = fill;
+		}
 
 		for(auto& slot : program->textures) {
 			for(unsigned e = 0; e < slot.units.size(); ++e) {
@@ -766,23 +794,39 @@ public:
 				if(!texture)
 					continue;
 				if(slot.vertexTexture >= 0) {
-					[encoder setVertexTexture:texture atIndex:slot.vertexTexture + e];
-					[encoder setVertexSamplerState:sampler atIndex:slot.vertexSampler + e];
+					unsigned t = slot.vertexTexture + e, s = slot.vertexSampler + e;
+					if(t < 32 && bound.vertexTextures[t] != texture) {
+						[encoder setVertexTexture:texture atIndex:t];
+						bound.vertexTextures[t] = texture;
+					}
+					if(s < 16 && bound.vertexSamplers[s] != sampler) {
+						[encoder setVertexSamplerState:sampler atIndex:s];
+						bound.vertexSamplers[s] = sampler;
+					}
 				}
 				if(slot.fragmentTexture >= 0) {
-					[encoder setFragmentTexture:texture atIndex:slot.fragmentTexture + e];
-					[encoder setFragmentSamplerState:sampler atIndex:slot.fragmentSampler + e];
+					unsigned t = slot.fragmentTexture + e, s = slot.fragmentSampler + e;
+					if(t < 32 && bound.fragmentTextures[t] != texture) {
+						[encoder setFragmentTexture:texture atIndex:t];
+						bound.fragmentTextures[t] = texture;
+					}
+					if(s < 16 && bound.fragmentSamplers[s] != sampler) {
+						[encoder setFragmentSamplerState:sampler atIndex:s];
+						bound.fragmentSamplers[s] = sampler;
+					}
 				}
 			}
 		}
 
-		if(program->uniformSize > 0) {
+		//Uniforms only go again when another program's are bound or the values changed
+		if(program->uniformSize > 0 && (bound.uniforms != program || program->uniformsChanged)) {
 			if(program->vertexBuffer >= 0)
 				[encoder setVertexBytes:program->uniformData.data() length:program->uniformSize atIndex:program->vertexBuffer];
 			if(program->fragmentBuffer >= 0)
 				[encoder setFragmentBytes:program->uniformData.data() length:program->uniformSize atIndex:program->fragmentBuffer];
+			bound.uniforms = program;
+			program->uniformsChanged = false;
 		}
-		[encoder setVertexBuffer:defaults offset:0 atIndex:defaultsBuffer];
 		return true;
 	}
 
@@ -822,7 +866,11 @@ public:
 			if(count == 0 || !prepareDraw(L_Batch))
 				continue;
 
-			[encoder setVertexBuffer:vertexData offset:vertexOffset atIndex:vertexDataBuffer];
+			if(bound.vertexData != vertexData || bound.vertexOffset != vertexOffset) {
+				[encoder setVertexBuffer:vertexData offset:vertexOffset atIndex:vertexDataBuffer];
+				bound.vertexData = vertexData;
+				bound.vertexOffset = vertexOffset;
+			}
 			[encoder drawIndexedPrimitives:step.lines ? MTLPrimitiveTypeLine : MTLPrimitiveTypeTriangle
 				indexCount:count indexType:MTLIndexTypeUInt16 indexBuffer:indexData
 				indexBufferOffset:indexOffset + step.indexOffset * sizeof(unsigned short)];
@@ -833,7 +881,11 @@ public:
 	void drawMesh(const Mesh& mesh) {
 		if(!prepareDraw(mesh.layout))
 			return;
-		[encoder setVertexBuffer:mesh.vertices offset:0 atIndex:vertexDataBuffer];
+		if(bound.vertexData != mesh.vertices || bound.vertexOffset != 0) {
+			[encoder setVertexBuffer:mesh.vertices offset:0 atIndex:vertexDataBuffer];
+			bound.vertexData = mesh.vertices;
+			bound.vertexOffset = 0;
+		}
 		if(mesh.tangents)
 			[encoder setVertexBuffer:mesh.tangents offset:0 atIndex:tangentBuffer];
 		if(mesh.colors)

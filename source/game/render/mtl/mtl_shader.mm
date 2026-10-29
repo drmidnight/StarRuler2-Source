@@ -139,6 +139,7 @@ void ShaderProgram::write(const Uniform& uniform, const void* data, unsigned com
 			if(offset + columnBytes > uniformData.size())
 				return;
 			memcpy(uniformData.data() + offset, src, columnBytes);
+			uniformsChanged = true;
 			src += columnBytes;
 		}
 	}

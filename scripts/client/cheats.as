@@ -334,6 +334,35 @@ class AllianceCheat : ConsoleCommand {
 	}
 };
 
+class BattleCheat : ConsoleCommand {
+	void execute(const string& args) {
+		if(!cheats)
+			return;
+
+		array<string>@ parts = args.split(" ");
+		battleFlagships = parts.length > 0 && parts[0].length != 0 ? clamp(toUInt(parts[0]), 1, 50) : 4;
+		battleSupports = parts.length > 1 ? clamp(toUInt(parts[1]), 0, 1000) : 100;
+		//Spawned on the next tick, as autoexec.txt runs before the player has an empire
+		battlePending = true;
+	}
+};
+
+bool battlePending = false;
+uint battleFlagships = 0, battleSupports = 0;
+
+void tick(double time) {
+	if(battlePending) {
+		battlePending = false;
+		Object@ home = playerEmpire.Homeworld;
+		if(home is null || home.region is null) {
+			error("ERROR: No homeworld to fight at.");
+			return;
+		}
+		//Between the homeworld and its star, clear of the planet
+		cheatBattle((home.position + home.region.position) * 0.5, battleFlagships, battleSupports);
+	}
+}
+
 void init() {
 	addConsoleCommand("cheats", SetCheats());
 	addConsoleCommand("ch_colonize", ColonizeCheat());
@@ -354,4 +383,5 @@ void init() {
 	addConsoleCommand("ch_ai_command", AICommand());
 	addConsoleCommand("ch_alliance", AllianceCheat());
 	addConsoleCommand("ch_trigger", TriggerCheat());
+	addConsoleCommand("ch_battle", BattleCheat());
 }

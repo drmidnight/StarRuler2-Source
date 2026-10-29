@@ -21,3 +21,4 @@ void cheatDebugAI(Empire@ emp) -> server::cheats::cheatDebugAI
 void cheatCommandAI(Empire@ emp, string cmd) -> server::cheats::cheatCommandAI
 void cheatAlliance(Empire& from, Empire& to) -> server::cheats::cheatAlliance
 void cheatTrigger(Object@ obj, Empire@ emp, string cmd) -> server::cheats::cheatTrigger
+void cheatBattle(vec3d at, uint flagships, uint supports) -> server::cheats::cheatBattle

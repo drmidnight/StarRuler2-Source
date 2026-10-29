@@ -83,6 +83,72 @@ void cheatSpawnSupports(vec3d spawnAt, const Design@ design, uint count, Empire@
 		createShip(spawnAt, design, owner);
 }
 
+//The empire's biggest flagship design, for a battle fleet
+const Design@ battleFlagship(Empire& emp) {
+	const Design@ best;
+	for(uint i = 0, cnt = emp.designCount; i < cnt; ++i) {
+		const Design@ dsg = emp.getDesign(i);
+		if(dsg is null || dsg.obsolete || dsg.hasTag(ST_IsSupport) || !dsg.hasTag(ST_Weapon) || !dsg.hasTag(ST_SupportCap))
+			continue;
+		if(best is null || dsg.size > best.size)
+			@best = dsg;
+	}
+	return best;
+}
+
+//The empire's armed support designs, for a battle fleet
+array<const Design@> battleSupports(Empire& emp) {
+	array<const Design@> supports;
+	for(uint i = 0, cnt = emp.designCount; i < cnt; ++i) {
+		const Design@ dsg = emp.getDesign(i);
+		if(dsg !is null && !dsg.obsolete && dsg.hasTag(ST_IsSupport) && dsg.hasTag(ST_Weapon))
+			supports.insertLast(dsg);
+	}
+	return supports;
+}
+
+void spawnBattleFleets(Empire& emp, vec3d at, vec3d toward, uint flagships, uint supports) {
+	const Design@ flagship = battleFlagship(emp);
+	array<const Design@> supportDesigns = battleSupports(emp);
+	if(flagship is null)
+		return;
+	vec3d side = vec3d(toward.z, 0, -toward.x).normalized(150.0);
+	for(uint i = 0; i < flagships; ++i) {
+		vec3d pos = at + side * (double(i) - double(flagships - 1) * 0.5);
+		Ship@ leader = createShip(pos, flagship, emp, free=true);
+		for(uint n = 0; n < supports && supportDesigns.length != 0; ++n)
+			createShip(leader, supportDesigns[n % supportDesigns.length], emp);
+	}
+}
+
+//Spawns fleets for the player and the first other major empire on either side of <at>,
+//and puts the two at war, so a large fight starts right away
+void cheatBattle(Player& player, vec3d at, uint flagships, uint supports) {
+	Empire@ emp = player.emp;
+	if(!CHEATS_ENABLED || emp is null || !emp.valid)
+		return;
+
+	Empire@ enemy;
+	for(uint i = 0, cnt = getEmpireCount(); i < cnt; ++i) {
+		Empire@ other = getEmpire(i);
+		if(other !is emp && other.valid && other.major) {
+			@enemy = other;
+			break;
+		}
+	}
+	if(enemy is null)
+		return;
+
+	emp.ContactMask |= enemy.mask;
+	enemy.ContactMask |= emp.mask;
+	emp.setHostile(enemy, true);
+	enemy.setHostile(emp, true);
+
+	vec3d gap(400.0, 0, 0);
+	spawnBattleFleets(emp, at - gap, gap, flagships, supports);
+	spawnBattleFleets(enemy, at + gap, gap, flagships, supports);
+}
+
 void cheatSpawnOrbital(vec3d spawnAt, uint orbitalType, Empire@ owner) {
 	if(!CHEATS_ENABLED)
 		return;

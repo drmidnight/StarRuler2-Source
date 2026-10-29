@@ -3,8 +3,16 @@
 #include "image.h"
 #include "rect.h"
 #include "render_state.h"
+#include <vector>
 
 namespace render {
+
+//A texture compressed for the GPU as ASTC blocks, with every mip level, largest first
+struct CompressedImage {
+	unsigned width = 0, height = 0;
+	unsigned blockWidth = 4, blockHeight = 4;
+	std::vector<std::vector<unsigned char>> levels;
+};
 
 enum TextureType {
 	TT_2D,
@@ -31,6 +39,8 @@ public:
 	//Loads the image on the calling thread, which needn't be the render thread, or returns
 	//false when the renderer can't. The texture changes once the driver applies the load.
 	virtual bool loadOffThread(Image& image, bool mipmap, bool cachePixels) { return false; }
+	//Loads a compressed image the same way, or returns false when the renderer can't
+	virtual bool loadCompressedOffThread(const CompressedImage& image) { return false; }
 	virtual void save(Image& image) const = 0;
 	virtual void bind() = 0;
 	virtual unsigned getID() const = 0;

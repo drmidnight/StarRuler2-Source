@@ -112,6 +112,8 @@ public:
 	//Puts textures loaded off the render thread into use, returning whether there were any
 	virtual bool applyTextureLoads() { return false; }
 	virtual bool hasTextureLoads() const { return false; }
+	//Whether textures can load compressed images
+	virtual bool supportsCompressedTextures() const { return false; }
 	//Vertical sync for drivers that present their own frames: 0 is off, otherwise
 	//the number of display refreshes per frame
 	virtual void setVerticalSync(int frames) {}

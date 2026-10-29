@@ -1556,6 +1556,7 @@ Manager::~Manager() {
 void Manager::clearScriptThreads() {
 	clearScripts = true;
 	pauseScripts = false;
+	pauseScripts.notify_all();
 	while(scriptThreadsExistent != 0)
 		threads::idle();
 	clearScripts = false;
@@ -1571,31 +1572,33 @@ void Manager::scriptThreadDestroy() {
 
 void Manager::pauseScriptThreads() {
 	pauseScripts = true;
-	while(scriptThreadsActive != 0)
-		threads::idle();
+	for(int active; (active = scriptThreadsActive.load()) != 0;)
+		scriptThreadsActive.wait(active);
 }
 
 void Manager::resumeScriptThreads() {
 	pauseScripts = false;
+	pauseScripts.notify_all();
 }
 
 bool Manager::scriptThreadStart() {
 	retry:
 	while(pauseScripts && !clearScripts)
-		threads::idle();
+		pauseScripts.wait(true);
 	if(clearScripts)
 		return false;
 
 	++scriptThreadsActive;
 	if(pauseScripts) {
-		--scriptThreadsActive;
+		scriptThreadEnd();
 		goto retry;
 	}
 	return true;
 }
 
 void Manager::scriptThreadEnd() {
-	--scriptThreadsActive;
+	if(--scriptThreadsActive == 0)
+		scriptThreadsActive.notify_all();
 }
 
 Call::Call()

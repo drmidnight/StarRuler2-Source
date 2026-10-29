@@ -300,23 +300,14 @@ class TerritoryNodeScript {
 
 	void render(Node& node) {
 		if(SHOW_TERRITORY_BORDERS) {
-			vec2f innerUV(0,0), outerUV(1,0);
-			vec2f innerUV_r(0,1), outerUV_r(1,1);
+			//The rings are written in one call each; drawing them a point at a time made
+			//them the most called part of the scripts
 			if(owner is playerEmpire) {
 				drawPolygonStart(edge_verts.length, material::Territory, Color(0xffffff80));
-					for(int i = 0, cnt = edge_verts.length; i < cnt; i += 2) {
-						drawPolygonPoint(edge_verts[i], outerUV);
-						drawPolygonPoint(edge_verts[(i+2)%cnt], outerUV);
-						drawPolygonPoint(edge_verts[(i+1)%cnt], innerUV);
-						
-						drawPolygonPoint(edge_verts[(i+2)%cnt], outerUV);
-						drawPolygonPoint(edge_verts[(i+3)%cnt], innerUV);
-						drawPolygonPoint(edge_verts[(i+1)%cnt], innerUV);
-					}
+				drawPolygonRing(edge_verts);
 				drawPolygonEnd();
 			}
 
-			double offset = 0;
 			bool stipple = false;
 			Empire@ master = owner.SubjugatedBy;
 			if(master !is null) {
@@ -328,23 +319,7 @@ class TerritoryNodeScript {
 			}
 
 			drawPolygonStart(inner_verts.length, material::Territory, owner.color);
-				for(int i = 0, cnt = inner_verts.length; i < cnt; i += 2) {
-					if(stipple) {
-						outerUV.y = offset;
-						innerUV.y = offset;
-						offset += inner_verts[i].distanceTo(inner_verts[(i+2)%cnt]);
-						outerUV_r.y = offset;
-						innerUV_r.y = offset;
-					}
-
-					drawPolygonPoint(inner_verts[i], outerUV);
-					drawPolygonPoint(inner_verts[(i+2)%cnt], outerUV_r);
-					drawPolygonPoint(inner_verts[(i+1)%cnt], innerUV);
-					
-					drawPolygonPoint(inner_verts[(i+2)%cnt], outerUV_r);
-					drawPolygonPoint(inner_verts[(i+3)%cnt], innerUV_r);
-					drawPolygonPoint(inner_verts[(i+1)%cnt], innerUV);
-				}
+			drawPolygonRing(inner_verts, 1.0, stipple);
 			drawPolygonEnd();
 		}
 	}

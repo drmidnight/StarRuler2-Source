@@ -275,9 +275,16 @@ measure it). No behaviour change in gameplay.
 instead of spinning, and `handleEvents` waits the same way. Paused on the benchmark save, the main
 thread went from about 0.8 cores to 0.25.
 
-**Still to do:** M3.3, M3.6, M1 item 5 and the
-`PhysicsGrid::updateItem` rwlock contention, and the non-atomic `received` flag in
-`bind_object.cpp` (`GetObjNode`/`GetObjName`). The in-game save/quit/new-game pass has not been run.
+**Waits done on `m6-metal`:** threads waiting for an async reply or `Object.wait` sleep on a wake
+counter (`waitForLockWake` in `lock.cpp`) instead of `sleep(0)` loops. Queued messages, replies and
+dropped messages bump it. That covers object and empire calls, and `GetObjNode`/`GetObjName`, whose
+`received` flag is now atomic. Pausing script threads for the GC, which happens 20 times a second,
+blocks on the thread counters instead of 1 ms idles. Paused script threads check back once a frame,
+and frames without a window are paced at 60 fps instead of sleeping 1 ms.
+
+**Still to do:** M3.3, the rest of M3.6 (network, loader, startup decode, autosave, web, IRC),
+M1 item 5 and the `PhysicsGrid::updateItem` rwlock contention. The in-game save/quit/new-game pass
+has not been run.
 
 ### Current structure (for reference)
 - **`processing::start`** (`processing.cpp:85-92`) starts three pools:

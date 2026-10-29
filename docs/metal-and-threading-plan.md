@@ -910,8 +910,19 @@ Do these in order of measured benefit:
 3. **Particles:** frustum-cull particle systems by a bounding sphere (radius = life × speed). Today
    `particle_system.cpp:526` culls nothing. Pool particles in structure-of-arrays storage instead of
    `new Particle` per particle. Use precomputed billboard vectors when rotation is 0.
-4. **Texture formats:** cache textures in ASTC or BC, pre-baked with mip chains, in the profile
-   cache. Startup decodes about 490 MB of PNG today.
+4. **Texture formats (done on `texture-cache`):** measured first, decoding was smaller than
+   expected: 429 images, 1.6 s of decode work on loader threads, 0.07 s of Metal uploads. Memory was
+   the bigger win: about 770 MB of RGBA8 with mips at texture quality 3, 1.7 GB at the highest.
+   - `resource/texture_cache.cpp` compresses to ASTC 4x4 with astc-encoder 5.7.0 (medium quality,
+     every core) and keeps one file per texture in the profile's `texture_cache`. The key covers the
+     source size and time and the size limit, so changed files and settings rebuild.
+   - Compressed: 2D textures with mip levels, RGB or RGBA, at least 256x256, that aren't lookup tables
+     and don't need click testing. Interface art and one-channel images keep their old formats.
+   - Mips are built on the CPU with the same box filter as `Image::makeMipmap`, and compressed per
+     level. Metal loads the levels on the loader thread like other textures. GL keeps PNGs.
+   - Benchmark capture run: 98 textures compressed, 7.8 s of encoding on the first run only; later
+     runs read all 98 from the 96 MB cache. Captures match uncompressed Metal within the usual noise.
+   - `bCompressTextures` (default on) turns it off.
 5. **Hand-written MSL (shader option A)** for the hottest translated shaders (ships, planets,
    atmospheres, particles). Keep translation as the fallback for mods.
 6. **Later options:** argument buffers, and parallel encoding with `MTLParallelRenderCommandEncoder`.

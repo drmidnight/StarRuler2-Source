@@ -1597,7 +1597,9 @@ bool Manager::scriptThreadStart() {
 }
 
 void Manager::scriptThreadEnd() {
-	if(--scriptThreadsActive == 0)
+	//Only pauseScriptThreads waits, and it sets pauseScripts first. Waking costs a
+	//system call even with no waiters, and threads end calls many times a frame.
+	if(--scriptThreadsActive == 0 && pauseScripts)
 		scriptThreadsActive.notify_all();
 }
 

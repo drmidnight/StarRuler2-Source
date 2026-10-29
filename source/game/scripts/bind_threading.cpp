@@ -548,9 +548,10 @@ threads::threadreturn threadcall runScriptThread(void* arg) {
 		}
 
 		thread.manager->scriptThreadEnd();
-		//Sleep until 2ms before the next timer
-		if(devices.driver->getGameSpeed() < 0.01)
-			threads::idle();
+		//Sleep until 2ms before the next timer. Game time stands still while paused,
+		//so then check back about once a frame.
+		if(useGameTime && devices.driver->getGameSpeed() < 0.01)
+			threads::sleep(16);
 		else {
 			int sleepTime = (1000.0 * (nextTime - curTime)) - 2.0;
 			if(sleepTime < 0)

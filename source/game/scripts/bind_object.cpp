@@ -481,23 +481,54 @@ static bool* bpBool(Blueprint& bp, const Subsystem* sys, unsigned index) {
 	return &bp.states[abs].boolean;
 }
 
+//Waits for a message sent to another group to be handled, handling messages to our
+//own group meanwhile, since the other group may be waiting on those
+static void waitForMessage(std::atomic<bool>& received, LockGroup* activeGroup) {
+	while(!received.load(std::memory_order_acquire)) {
+		unsigned seen = lockWakeSerial();
+		if(activeGroup) {
+			if(activeGroup->hasMessages()) {
+				activeGroup->processMessages(4);
+				continue;
+			}
+		}
+		else if(tickRandomMessages(10)) {
+			continue;
+		}
+
+		if(received.load(std::memory_order_acquire))
+			break;
+		waitForLockWake(seen);
+	}
+}
+
 class GetObjNode : public ObjectMessage {
 	scene::Node*& node;
-	bool& received;
+	//Points into the waiting thread's stack, which is gone once it sees the flag set
+	std::atomic<bool>* received;
 public:
-	GetObjNode(Object* obj, scene::Node*& nodePtr, bool& result)
-		: ObjectMessage(obj), node(nodePtr), received(result)
+	GetObjNode(Object* obj, scene::Node*& nodePtr, std::atomic<bool>& result)
+		: ObjectMessage(obj), node(nodePtr), received(&result)
 	{
 		object->grab();
-		received = false;
 	}
 	
 	void process() {
 		node = object->node;
 		if(node)
 			node->grab();
-		received = true;
+		received->store(true, std::memory_order_release);
+		received = nullptr;
+		wakeLockWaiters();
+	}
+
+	~GetObjNode() {
 		object->drop();
+		//Release the waiter if the message was dropped without being processed
+		if(received) {
+			received->store(true, std::memory_order_release);
+			wakeLockWaiters();
+		}
 	}
 };
 
@@ -510,19 +541,11 @@ static scene::Node* objGetNode(Object* obj) {
 		return node;
 	}
 	else {
-		scene::Node* pNode;
-		bool received = false;
+		scene::Node* pNode = nullptr;
+		std::atomic<bool> received = false;
 
 		obj->lockGroup->addMessage(new GetObjNode(obj, pNode, received));
-	
-		while(!received) {
-			threads::sleep(0);
-			if(activeGroup)
-				activeGroup->processMessages(4);
-			else
-				tickRandomMessages(10);
-		}
-
+		waitForMessage(received, activeGroup);
 		return pNode;
 	}
 }
@@ -543,19 +566,29 @@ static quaterniond objNodeRotation(Object* obj) {
 
 class GetObjName : public ObjectMessage {
 	std::string& name;
-	bool& received;
+	//Points into the waiting thread's stack, which is gone once it sees the flag set
+	std::atomic<bool>* received;
 public:
-	GetObjName(Object* obj, std::string& Name, bool& result)
-		: ObjectMessage(obj), name(Name), received(result)
+	GetObjName(Object* obj, std::string& Name, std::atomic<bool>& result)
+		: ObjectMessage(obj), name(Name), received(&result)
 	{
 		object->grab();
-		received = false;
 	}
 	
 	void process() {
 		name = object->name;
-		received = true;
+		received->store(true, std::memory_order_release);
+		received = nullptr;
+		wakeLockWaiters();
+	}
+
+	~GetObjName() {
 		object->drop();
+		//Release the waiter if the message was dropped without being processed
+		if(received) {
+			received->store(true, std::memory_order_release);
+			wakeLockWaiters();
+		}
 	}
 };
 
@@ -566,18 +599,10 @@ static std::string objGetName(Object* obj) {
 	}
 	else {
 		std::string name;
-		bool received = false;
+		std::atomic<bool> received = false;
 
 		obj->lockGroup->addMessage(new GetObjName(obj, name, received));
-	
-		while(!received) {
-			threads::sleep(0);
-			if(activeGroup)
-				activeGroup->processMessages(4);
-			else
-				tickRandomMessages(10);
-		}
-
+		waitForMessage(received, activeGroup);
 		return name;
 	}
 }

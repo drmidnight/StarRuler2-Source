@@ -132,9 +132,6 @@ VSYNC_Off: Off
 VSYNC_On: On
 VSYNC_OnHalf: On (Half Framerate)
 VSYNC_Adaptive: Adaptive
-RENDERER: Renderer (applies on restart)
-RENDERER_GL: OpenGL
-RENDERER_Metal: Metal
 
 AUDIO_DEVICE: Audio Device*
 AUDIO_DEVICE_DEFAULT: Default

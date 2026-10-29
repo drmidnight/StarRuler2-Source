@@ -379,26 +379,6 @@ class GuiVsyncOption : GuiDropdownOption, EngineOption {
 };
 
 //Which graphics API draws the game; takes effect on the next start
-class GuiRendererOption : GuiDropdownOption, EngineOption {
-	GuiRendererOption(BaseGuiElement@ parent, const recti& pos) {
-		super(parent, pos, locale::RENDERER);
-
-		box.addItem(locale::RENDERER_GL);
-		box.addItem(locale::RENDERER_Metal);
-
-		reset();
-	}
-
-	void reset() {
-		box.selected = settings::sRenderBackend == "metal" ? 1 : 0;
-	}
-
-	void apply() {
-		if(box.selected >= 0)
-			settings::sRenderBackend = box.selected == 1 ? "metal" : "gl";
-	}
-};
-
 class GuiAAOption : GuiDropdownOption, EngineOption {
 	GuiAAOption(BaseGuiElement@ parent, const recti& pos) {
 		super(parent, pos, locale::ANTIALIASING);
@@ -556,10 +536,6 @@ class GraphicsOptions : OptionsBox {
 		
 		y += 32;
 		options.insertLast(GuiVsyncOption(
-			panel, recti_area(8, y, 550, 32)));
-
-		y += 32;
-		options.insertLast(GuiRendererOption(
 			panel, recti_area(8, y, 550, 32)));
 
 		y += 32;

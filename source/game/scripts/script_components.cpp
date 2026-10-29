@@ -773,13 +773,16 @@ public:
 	void process() {
 		done->store(true, std::memory_order_release);
 		done = nullptr;
+		wakeLockWaiters();
 	}
 
 	~ObjectWaitMessage() {
 		object->drop();
 		//Release the waiter if the message was dropped without being processed
-		if(done)
+		if(done) {
 			done->store(true, std::memory_order_release);
+			wakeLockWaiters();
+		}
 	}
 };
 
@@ -799,11 +802,20 @@ void objectWait(Object* obj) {
 
 	LockGroup* activeGroup = getActiveLockGroup();
 	while(!done.load(std::memory_order_acquire)) {
-		threads::sleep(0);
-		if(activeGroup)
-			activeGroup->processMessages(4);
-		else
-			tickRandomMessages(10);
+		unsigned seen = lockWakeSerial();
+		if(activeGroup) {
+			if(activeGroup->hasMessages()) {
+				activeGroup->processMessages(4);
+				continue;
+			}
+		}
+		else if(tickRandomMessages(10)) {
+			continue;
+		}
+
+		if(done.load(std::memory_order_acquire))
+			break;
+		waitForLockWake(seen);
 	}
 }
 
@@ -1069,6 +1081,7 @@ public:
 				info( format("Cannot call method '$1' on other empires.", method->wrapped.name).c_str() );
 			if(retValue) {
 				retValue->setAsyncReturned();
+				wakeLockWaiters();
 			}
 			return;
 		}
@@ -1101,6 +1114,7 @@ public:
 			else
 				*retValue = ret;
 			retValue->setAsyncReturned();
+			wakeLockWaiters();
 		}
 		else {
 			method->desc.call(cl);
@@ -1193,13 +1207,19 @@ static GenericValue emp_wrapperFunc(void* arg, GenericCallData& args) {
 
 			emp->queueMessage(new AsyncEmpireScriptCall(method, args, offset, isGUI, hasReturn ? &retVal : nullptr));
 
-			//Wait for async data return
+			//Wait for async data return, handling messages to our own group meanwhile
 			if(hasReturn) {
 				auto* activeGroup = getActiveLockGroup();
 				while(!retVal.isAsyncReturned()) {
-					threads::sleep(0);
-					if(activeGroup)
+					unsigned seen = lockWakeSerial();
+					if(activeGroup && activeGroup->hasMessages()) {
 						activeGroup->processMessages(4);
+						continue;
+					}
+
+					if(retVal.isAsyncReturned())
+						break;
+					waitForLockWake(seen);
 				}
 			}
 		}

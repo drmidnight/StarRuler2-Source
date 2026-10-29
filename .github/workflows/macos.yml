@@ -1,0 +1,59 @@
+#Builds the Apple Silicon app and disk image. Tags starting with v also publish a release.
+name: macOS build
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          #make_app.sh numbers the build by commit count
+          fetch-depth: 0
+
+      #The static libraries take most of the build time, and only change with build_deps.sh
+      - name: Restore dependencies
+        id: deps
+        uses: actions/cache@v4
+        with:
+          path: deps/macos
+          key: macos-deps-${{ runner.arch }}-${{ hashFiles('source/macos/build_deps.sh') }}
+
+      - name: Build dependencies
+        if: steps.deps.outputs.cache-hit != 'true'
+        run: bash source/macos/build_deps.sh
+
+      - name: Build AngelScript
+        run: make -f source/linux/Makefile angelscript
+
+      - name: Build the game
+        run: make -f source/linux/Makefile compile -j"$(sysctl -n hw.ncpu)"
+
+      - name: Package the app
+        run: bash source/macos/make_app.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StarRuler2-macos-arm64
+          path: dist/*.dmg
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StarRuler2-dSYM
+          path: dist/*.dSYM
+          if-no-files-found: ignore
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.dmg --title "$GITHUB_REF_NAME" --generate-notes

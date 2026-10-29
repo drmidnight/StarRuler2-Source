@@ -132,6 +132,7 @@ static bool toMSL(std::vector<unsigned>&& spirv, spv::ExecutionModel model, cons
 			texture.cube = type.image.dim == spv::DimCube;
 			texture.textureIndex = msl.get_automatic_msl_resource_binding(image.id);
 			texture.samplerIndex = msl.get_automatic_msl_resource_binding_secondary(image.id);
+			texture.arraySize = type.array.empty() ? 1 : type.array[0];
 			reflection.textures.push_back(texture);
 		}
 		if(model == spv::ExecutionModelVertex)

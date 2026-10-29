@@ -17,7 +17,8 @@ struct ShaderReflection {
 	struct Texture {
 		std::string name;
 		bool cube;
-		unsigned textureIndex, samplerIndex;
+		//Arrays of samplers take consecutive texture and sampler indices
+		unsigned textureIndex, samplerIndex, arraySize;
 	};
 
 	struct Input {

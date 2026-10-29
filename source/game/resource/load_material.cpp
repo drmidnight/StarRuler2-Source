@@ -4,6 +4,7 @@
 #include "main/signpost.h"
 #include "render/render_state.h"
 #include "resource/library.h"
+#include "resource/texture_cache.h"
 #include "compat/misc.h"
 #include "str_util.h"
 #include "num_util.h"
@@ -179,6 +180,29 @@ bool Library::processImages(int maxPriority, int amount) {
 
 		processedAny = true;
 
+		//A texture loaded on this thread no longer needs its images, and is tracked for reloads
+		auto loadedHere = [&]() {
+			elem.clearImages();
+			if(!elem.filename.empty()) {
+				threads::Lock lock(queuedTexturesLock);
+				texture_files[elem.filename] = elem.tex;
+			}
+		};
+
+		//Textures the cache can compress skip decoding once they are cached
+		bool compress = !elem.filename.empty() && elem.tex && elem.tex->type == render::TT_2D && !elem.cachePixels
+			&& resource::textureCacheAvailable() && resource::mayCompressTexture(elem.filename, elem.mipmap);
+		if(compress) {
+			render::CompressedImage compressed;
+			if(resource::loadCachedTexture(elem.filename, getMaxTextureSize(), elem.mipmap, compressed)
+					&& elem.tex->loadCompressedOffThread(compressed)) {
+				loadedHere();
+				if(++processed >= amount)
+					break;
+				continue;
+			}
+		}
+
 		if(!elem.filename.empty()) {
 			Image* img = loadImage(elem.filename.c_str());
 
@@ -210,13 +234,15 @@ bool Library::processImages(int maxPriority, int amount) {
 
 		++processed;
 
+		render::CompressedImage compressed;
+		if(compress && elem.images.size() == 1 && resource::shouldCompressTexture(*elem.images[0])
+				&& resource::compressTexture(elem.filename, getMaxTextureSize(), elem.mipmap, *elem.images[0], compressed)
+				&& elem.tex->loadCompressedOffThread(compressed)) {
+			loadedHere();
+		}
 		//Renderers that can load textures on this thread skip the render thread's queue
-		if(elem.tex && elem.images.size() == 1 && elem.tex->loadOffThread(*elem.images[0], elem.mipmap, elem.cachePixels)) {
-			elem.clearImages();
-			if(!elem.filename.empty()) {
-				threads::Lock lock(queuedTexturesLock);
-				texture_files[elem.filename] = elem.tex;
-			}
+		else if(elem.tex && elem.images.size() == 1 && elem.tex->loadOffThread(*elem.images[0], elem.mipmap, elem.cachePixels)) {
+			loadedHere();
 		}
 		else {
 			queuedTexturesLock.lock();

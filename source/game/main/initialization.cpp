@@ -1678,6 +1678,7 @@ void loadEngineSettings() {
 		cat->settings.push_back(new NamedGeneric("iVsync", 1));
 		cat->settings.push_back(new NamedGeneric("sMonitor", ""));
 		cat->settings.push_back(new NamedGeneric("sRenderBackend", "metal"));
+		cat->settings.push_back(new NamedGeneric("bCompressTextures", true));
 		cat->settings.push_back(new NamedGeneric("bShaderFallback", false));
 
 		auto* guiScale = new NamedGeneric("dGUIScale", 1.0);

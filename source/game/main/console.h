@@ -29,6 +29,8 @@ private:
 	std::unordered_map<int, std::string> binds;
 
 	std::list<std::string> lines, history;
+	//Commands waiting a number of frames to run
+	std::vector<std::pair<unsigned, std::string>> delayed;
 	std::list<std::string>::const_iterator historyItem;
 
 	std::list<std::tuple<std::string, size_t, int>> undo, redo;
@@ -57,6 +59,8 @@ public:
 	void printLn(const std::string& line);
 	void execute(const std::string& command, bool echo);
 	void executeFile(const std::string& filename);
+	//Runs commands from 'delay' whose frames have passed, once per game frame
+	void tickDelayed();
 
 	profile::Keybind* keybind;
 

@@ -740,6 +740,8 @@ void tickGame() {
 	if(reload_gui)
 		tickGuiReload();
 
+	console.tickDelayed();
+
 	renderFrame(devices.scripts.client, devices.scripts.client);
 	inputTick();
 	processing::runIsolation();

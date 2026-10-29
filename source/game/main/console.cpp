@@ -242,6 +242,23 @@ Console::Console() : open(false), permaStats(false), bg(new render::RenderState)
 		}
 	} );
 
+	addCommand("delay", [this](argList& args) {
+		if(args.size() < 2) {
+			printLn("Delay requires a frame count and a command");
+			return;
+		}
+		std::string command;
+		for(size_t i = 1; i < args.size(); ++i) {
+			if(!command.empty())
+				command += " ";
+			if(args[i].find(' ') != std::string::npos)
+				command += "\"" + args[i] + "\"";
+			else
+				command += args[i];
+		}
+		delayed.emplace_back(toNumber<unsigned>(args[0]), command);
+	} );
+
 	addCommand("in", [this](argList& args) {
 		if(args.empty()) {
 			asModule = "";
@@ -673,6 +690,21 @@ void Console::execute(const std::string& command, bool echo) {
 			}
 
 			func->second.call(args);
+		}
+	}
+}
+
+void Console::tickDelayed() {
+	//Commands queued during this pass wait for the next frame
+	for(size_t i = 0, cnt = delayed.size(); i < cnt; ++i) {
+		if(delayed[i].first == 0) {
+			std::string command = std::move(delayed[i].second);
+			delayed.erase(delayed.begin() + i);
+			--i; --cnt;
+			execute(command, false);
+		}
+		else {
+			--delayed[i].first;
 		}
 	}
 }

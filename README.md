@@ -1,5 +1,7 @@
 # Star Ruler 2 for Apple Silicon Macs
 
+### Disclaimer: This is heavily claude generated. I don't have the time to do this all myself, but I love this game and want a smooth experience on my macbook.
+
 This is a fork of [BlindMindStudios/StarRuler2-Source](https://github.com/BlindMindStudios/StarRuler2-Source)
 that runs Star Ruler 2 natively on Apple Silicon Macs (macOS 13 or later). It upgrades the
 scripting engine to AngelScript 2.37 for native arm64 support, fixes the macOS window, input
@@ -11,6 +13,45 @@ This fork only targets Apple Silicon Macs. If something doesn't work, please
 [open an issue](https://github.com/drmidnight/StarRuler2-Source/issues) describing what
 happened, and attach `~/.starruler2/log.txt` if the game crashed.
 
+## Changes
+```
+  Platform and build
+  - Builds and runs natively on Apple Silicon (macOS 13 or later), compiled as C++20.
+  - AngelScript upgraded to 2.37.0, with the game scripts and add-ons adapted.
+  - Dependencies are built as static libraries, so no Homebrew is needed. The dependencies include GLFW 3.4,
+    glslang and SPIRV-Cross.
+  - Packaged as an ad-hoc signed .app and disk image, with a dSYM for reading crash logs.
+  - Thread and address sanitizer builds, Instruments signposts, and threading tests.
+
+  Rendering
+  - A Metal renderer, now the default, with OpenGL 4.1 core as the alternative. You choose between them in
+    the options or with --render-backend.
+  - The renderer-independent code moved into a shared BaseDriver.
+  - Old GL shaders are translated to GLSL 4.10 and Metal, and a shader stands in for the old fixed-function
+    pipeline.
+  - Rendering at Retina resolution, with fonts drawn at the screen's pixel density.
+  - On Metal, textures load on background threads, and frames in flight are capped at 3.
+  - A --capture mode and a comparison tool check that Metal renders the same as GL.
+
+  Threading and performance
+  - New threading primitives, plus a worker pool with priority lanes that drives the simulation.
+  - Threads are named and run at the right priority.
+  - Waits block instead of spinning: frame pacing, script calls to objects and empires, and script-thread
+    pauses.
+  - Data races fixed: atomic flags, async call returns, vision sharing, the threaded loader and script
+    garbage collection.
+  - The frame limiter supports refresh rates above 60 Hz. The galaxy view now holds a steady 120 fps.
+
+  Window and input
+  - GLFW 3.4, with borderless fullscreen above the menu bar and Cmd+Enter to toggle it. The fullscreen
+    option applies without a restart.
+  - Trackpad: smooth scroll-zoom, pinch to zoom, and an option to scroll to pan.
+  - Gamepad support through the window driver, and a fix for the backtick key.
+
+  Fixes
+  - Mod folder paths, symlink scanning, monotonic game timing, a --test-scripts failure exit, and script
+    division by zero.
+```
 ---
 
 # Star Ruler 2

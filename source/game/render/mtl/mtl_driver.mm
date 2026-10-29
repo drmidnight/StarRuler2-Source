@@ -318,6 +318,10 @@ public:
 		return hasQueuedLoads();
 	}
 
+	bool supportsCompressedTextures() const override {
+		return [device supportsFamily:MTLGPUFamilyApple2];
+	}
+
 	void presentFrame() override {
 		renderVertexBuffers();
 		target = nullptr;

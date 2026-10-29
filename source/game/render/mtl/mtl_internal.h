@@ -49,6 +49,7 @@ public:
 	void loadFinish(bool mipmap, unsigned lod) override;
 	void load(Image& image, bool mipmap, bool cachePixels) override;
 	bool loadOffThread(Image& image, bool mipmap, bool cachePixels) override;
+	bool loadCompressedOffThread(const CompressedImage& image) override;
 	void save(Image& image) const override;
 	void bind() override {}
 	unsigned getID() const override { return texture ? 1 : 0; }

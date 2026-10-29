@@ -199,10 +199,54 @@ bool Texture2D::loadOffThread(Image& image, bool mipmap, bool cachePixels) {
 	return true;
 }
 
+bool Texture2D::loadCompressedOffThread(const CompressedImage& image) {
+	if(image.levels.empty() || image.blockWidth != 4 || image.blockHeight != 4)
+		return false;
+
+	MTLTextureDescriptor* desc = [MTLTextureDescriptor new];
+	desc.textureType = MTLTextureType2D;
+	desc.pixelFormat = MTLPixelFormatASTC_4x4_LDR;
+	desc.width = image.width;
+	desc.height = image.height;
+	desc.mipmapLevelCount = image.levels.size();
+	desc.usage = MTLTextureUsageShaderRead;
+	desc.storageMode = MTLStorageModeShared;
+	id<MTLTexture> made = [device newTextureWithDescriptor:desc];
+	if(!made)
+		return false;
+
+	for(unsigned level = 0; level < image.levels.size(); ++level) {
+		unsigned w = std::max(1u, image.width >> level), h = std::max(1u, image.height >> level);
+		unsigned blocksWide = (w + 3) / 4, blocksHigh = (h + 3) / 4;
+		if(image.levels[level].size() < blocksWide * blocksHigh * 16)
+			return false;
+		[made replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:level slice:0
+			withBytes:image.levels[level].data() bytesPerRow:blocksWide * 16 bytesPerImage:0];
+	}
+
+	vec2i newSize(image.width, image.height);
+	bool mipmapped = image.levels.size() > 1;
+	queueTextureLoad(this, [this, made, newSize, mipmapped] {
+		texture = made;
+		size = newSize;
+		//ASTC 4x4 takes a byte per pixel
+		pixelDepth = 1;
+		alphaOnly = false;
+		hasMipMaps = mipmapped;
+		activePixels.clear();
+		loaded = true;
+	});
+	return true;
+}
+
 void Texture2D::save(Image& image) const {
 	image.resize(size.width, size.height, FMT_RGBA);
 	if(!texture)
 		return;
+	if(texture.pixelFormat == MTLPixelFormatASTC_4x4_LDR) {
+		error("Compressed textures can't be read back");
+		return;
+	}
 	finishPendingWork();
 	if(texture.pixelFormat == MTLPixelFormatRGBA8Unorm) {
 		[texture getBytes:image.rgba bytesPerRow:size.width * 4

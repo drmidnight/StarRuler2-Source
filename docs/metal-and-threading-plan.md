@@ -767,7 +767,8 @@ regression on the benchmark.
 
 Progress on `m6-metal`:
 - **Backend switch:** `sRenderBackend` (`metal` default, or `gl`), and `--render-backend` on the command
-  line. With Metal the window has no GL context and a `CAMetalLayer`.
+  line. With Metal the window has no GL context and a `CAMetalLayer`. Both were removed with the GL
+  renderer in M7.
 - **Shared driver code:** `render/driver_base.h` (`BaseDriver`) holds everything API-independent:
   transforms, built-ins, lights, camera data and drawing through the batcher. `GLDriver` and
   `mtl::Driver` add state, clears, scissors, targets and resources.
@@ -926,8 +927,16 @@ Do these in order of measured benefit:
 5. **Hand-written MSL (shader option A)** for the hottest translated shaders (ships, planets,
    atmospheres, particles). Keep translation as the fallback for mods.
 6. **Later options:** argument buffers, and parallel encoding with `MTLParallelRenderCommandEncoder`.
-7. **Remove the OpenGL backend:** delete `gl_*.cpp` and the GL context code, and drop the `OpenGL`
-   framework.
+7. **Remove the OpenGL backend (done on `remove-gl`):**
+   - The renderer choice is gone from the settings, the options menu and the command line, and the
+     window never gets a GL context, so the 60 Hz GL vsync workaround went too.
+   - `gl_*.cpp` and `compat/gl.h` are deleted, the shader variables they held moved to
+     `render/driver.cpp`, and the `OpenGL` framework is no longer linked. The shim's GLSL 1.20 target
+     went with them; all 186 translated Metal shaders are unchanged.
+   - Dependency files list headers with `-MP`, so deleting a header no longer breaks a build.
+   - Capture comparisons now use an earlier Metal capture as the reference. `iSamples` (MSAA) does
+     nothing on Metal yet.
+   - The Linux and Windows build files still name GL; this fork only builds on Apple Silicon.
 
 ---
 

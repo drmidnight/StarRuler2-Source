@@ -4,12 +4,14 @@
 
 This is a fork of [BlindMindStudios/StarRuler2-Source](https://github.com/BlindMindStudios/StarRuler2-Source)
 that runs Star Ruler 2 natively on Apple Silicon Macs (macOS 13 or later). It upgrades the
-scripting engine to AngelScript 2.37 for native arm64 support, fixes the macOS window, input
-and rendering problems, and packages the game as a Mac app. Download the disk image from the
+scripting engine to AngelScript 2.37 for native arm64 support, renders with Metal instead of
+OpenGL, fixes the macOS window and input problems, and packages the game as a Mac app. Download the disk image from the
 [Releases](https://github.com/drmidnight/StarRuler2-Source/releases) page, or see
 [Building on macOS](#building-on-macos) below.
 
-This fork only targets Apple Silicon Macs. If something doesn't work, please
+This fork only targets Apple Silicon Macs, and the Windows and Linux build instructions below
+are from the original project: without OpenGL those builds have no renderer. If something
+doesn't work, please
 [open an issue](https://github.com/drmidnight/StarRuler2-Source/issues) describing what
 happened, and attach `~/.starruler2/log.txt` if the game crashed.
 
@@ -104,8 +106,8 @@ tools and CMake, then from the main directory:
     make -f source/linux/Makefile compile
     bash source/macos/make_app.sh
 
-`build_deps.sh` builds libpng, FreeType, GLEW, libogg and libvorbis as static libraries in
-`deps/macos`, so the game has no Homebrew dependencies. `make_app.sh` creates an ad-hoc signed
+`build_deps.sh` builds libpng, FreeType, libogg, libvorbis, GLFW, glslang, SPIRV-Cross and
+astc-encoder as static libraries in `deps/macos`, so the game has no Homebrew dependencies. `make_app.sh` creates an ad-hoc signed
 `dist/Star Ruler 2.app` and `dist/StarRuler2-<version>-macos-arm64.dmg`. Without
 `deps/macos` the makefile falls back to Homebrew's libraries, which is fine for running the game
 locally with `StarRuler2.sh`.

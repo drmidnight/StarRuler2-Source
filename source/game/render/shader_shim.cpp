@@ -35,11 +35,6 @@ enum MapFlags {
 	MF_Vertex = 1<<0,
 	MF_Fragment = 1<<1,
 	MF_Stages = MF_Vertex | MF_Fragment,
-	//Targets the mapping applies to
-	MF_Legacy = 1<<2,
-	MF_Core = 1<<3,
-	MF_Targets = MF_Legacy | MF_Core,
-	MF_All = MF_Stages | MF_Targets,
 };
 
 //An identifier mapped onto another, with the declarations it needs
@@ -51,46 +46,38 @@ struct Mapping {
 };
 
 static const Mapping mappings[] = {
-	{"gl_ModelViewMatrix", "sr_ModelView", D_ModelView, MF_All},
-	{"gl_ProjectionMatrix", "sr_Projection", D_Projection, MF_All},
-	{"gl_ModelViewProjectionMatrix", "sr_ModelViewProjection", D_ModelViewProjection, MF_All},
-	{"gl_NormalMatrix", "sr_NormalMatrix", D_NormalMatrix, MF_All},
-	{"gl_ProjectionMatrixInverse", "sr_ProjectionInverse", D_ProjectionInverse, MF_All},
-	{"gl_LightSource", "sr_LightSource", D_LightSource, MF_All},
-	{"gl_FrontMaterial", "sr_FrontMaterial", D_FrontMaterial, MF_All},
-	{"gl_LightModel", "sr_LightModel", D_LightModel, MF_All},
-	{"gl_Vertex", "sr_Vertex", D_Vertex, MF_Vertex | MF_Targets},
-	{"gl_Normal", "sr_Normal", D_Normal, MF_Vertex | MF_Targets},
-	{"gl_Color", "sr_Color", D_Color, MF_Vertex | MF_Targets},
-	{"gl_MultiTexCoord0", "sr_MultiTexCoord0", D_MultiTexCoord0, MF_Vertex | MF_Targets},
-	{"ftransform", "sr_ftransform", D_ftransform | D_ModelViewProjection | D_Vertex, MF_Vertex | MF_Targets},
+	{"gl_ModelViewMatrix", "sr_ModelView", D_ModelView, MF_Stages},
+	{"gl_ProjectionMatrix", "sr_Projection", D_Projection, MF_Stages},
+	{"gl_ModelViewProjectionMatrix", "sr_ModelViewProjection", D_ModelViewProjection, MF_Stages},
+	{"gl_NormalMatrix", "sr_NormalMatrix", D_NormalMatrix, MF_Stages},
+	{"gl_ProjectionMatrixInverse", "sr_ProjectionInverse", D_ProjectionInverse, MF_Stages},
+	{"gl_LightSource", "sr_LightSource", D_LightSource, MF_Stages},
+	{"gl_FrontMaterial", "sr_FrontMaterial", D_FrontMaterial, MF_Stages},
+	{"gl_LightModel", "sr_LightModel", D_LightModel, MF_Stages},
+	{"gl_Vertex", "sr_Vertex", D_Vertex, MF_Vertex},
+	{"gl_Normal", "sr_Normal", D_Normal, MF_Vertex},
+	{"gl_Color", "sr_Color", D_Color, MF_Vertex},
+	{"gl_MultiTexCoord0", "sr_MultiTexCoord0", D_MultiTexCoord0, MF_Vertex},
+	{"ftransform", "sr_ftransform", D_ftransform | D_ModelViewProjection | D_Vertex, MF_Vertex},
 
 	//GLSL 1.20 language that core profiles removed
-	{"attribute", "in", 0, MF_Vertex | MF_Core},
-	{"varying", "out", 0, MF_Vertex | MF_Core},
-	{"varying", "in", 0, MF_Fragment | MF_Core},
-	{"gl_FrontColor", "sr_FrontColor", D_FrontColor, MF_Vertex | MF_Core},
-	{"gl_BackColor", "sr_BackColor", D_BackColor, MF_Vertex | MF_Core},
-	{"gl_Color", "sr_FrontColor", D_FrontColor, MF_Fragment | MF_Core},
-	{"gl_TexCoord", "sr_TexCoord", D_TexCoord, MF_Stages | MF_Core},
-	{"gl_FragColor", "sr_FragColor", D_FragColor, MF_Fragment | MF_Core},
+	{"attribute", "in", 0, MF_Vertex},
+	{"varying", "out", 0, MF_Vertex},
+	{"varying", "in", 0, MF_Fragment},
+	{"gl_FrontColor", "sr_FrontColor", D_FrontColor, MF_Vertex},
+	{"gl_BackColor", "sr_BackColor", D_BackColor, MF_Vertex},
+	{"gl_Color", "sr_FrontColor", D_FrontColor, MF_Fragment},
+	{"gl_TexCoord", "sr_TexCoord", D_TexCoord, MF_Stages},
+	{"gl_FragColor", "sr_FragColor", D_FragColor, MF_Fragment},
 	//Shaders name samplers "texture", which hides the core function, so calls go
 	//through wrappers declared ahead of the shader's own code
-	{"texture2D", "sr_texture2D", D_texture2D, MF_Stages | MF_Core},
-	{"textureCube", "sr_textureCube", D_textureCube, MF_Stages | MF_Core},
-	{"texture2DLod", "sr_texture2DLod", D_texture2DLod, MF_Stages | MF_Core},
-	{"textureCubeLod", "sr_textureCubeLod", D_textureCubeLod, MF_Stages | MF_Core},
-	//The fragment shader's main is wrapped to apply the alpha test, and the core
-	//vertex shader's to flip clip space for APIs whose render targets are upside down
-	{"main", "sr_main", D_main, MF_Fragment | MF_Targets},
-	{"main", "sr_main", D_main, MF_Vertex | MF_Core},
-};
-
-//Built-ins that GLSL 1.20 provides without fixed-function state
-static const char* legacyBuiltins[] = {
-	"gl_Position", "gl_PointSize", "gl_FragColor", "gl_FragData", "gl_FragCoord",
-	"gl_FrontFacing", "gl_PointCoord", "gl_FrontColor", "gl_BackColor", "gl_TexCoord",
-	"gl_Color",
+	{"texture2D", "sr_texture2D", D_texture2D, MF_Stages},
+	{"textureCube", "sr_textureCube", D_textureCube, MF_Stages},
+	{"texture2DLod", "sr_texture2DLod", D_texture2DLod, MF_Stages},
+	{"textureCubeLod", "sr_textureCubeLod", D_textureCubeLod, MF_Stages},
+	//The fragment shader's main is wrapped to apply the alpha test, and the vertex
+	//shader's to flip clip space for render targets
+	{"main", "sr_main", D_main, MF_Stages},
 };
 
 //Built-ins that core profiles still have
@@ -222,8 +209,7 @@ static std::set<std::string> declaredVaryings(const std::string& source) {
 }
 
 static void declare(std::string& out, unsigned used, ShaderStage stage, ShimTarget target) {
-	const bool core = target != ST_GLSL120;
-	const char* input = core ? "in" : "attribute";
+	const char* input = "in";
 
 	if(used & D_LightSource) {
 		out += "struct sr_LightSourceParameters { vec4 ambient; vec4 diffuse; vec4 specular; vec4 position;"
@@ -262,7 +248,7 @@ static void declare(std::string& out, unsigned used, ShaderStage stage, ShimTarg
 			out += "vec4 sr_ftransform() { return sr_ModelViewProjection * sr_Vertex; }\n";
 	}
 
-	if(core) {
+	{
 		const char* varying = stage == SS_Vertex ? "out" : "in";
 		//The vertex shader always passes a colour on, as GL did, so fragment shaders
 		//that read it link whether or not the vertex shader wrote one
@@ -293,7 +279,7 @@ static void declare(std::string& out, unsigned used, ShaderStage stage, ShimTarg
 		out += "uniform float sr_AlphaRef;\n";
 		out += "void sr_main();\n";
 	}
-	else if(core) {
+	else {
 		out += "uniform float sr_FlipY;\n";
 		out += "void sr_main();\n";
 	}
@@ -320,8 +306,6 @@ static bool shimStage(const std::string& source, ShaderStage stage, ShimTarget t
 	const std::set<std::string>* vertexVaryings, std::string& output, std::string& problems)
 {
 	const unsigned stageFlag = stage == SS_Vertex ? MF_Vertex : MF_Fragment;
-	const unsigned targetFlag = target == ST_GLSL120 ? MF_Legacy : MF_Core;
-	const bool core = target != ST_GLSL120;
 
 	std::string body, extensions;
 	std::set<std::string> unsupported;
@@ -382,14 +366,14 @@ static bool shimStage(const std::string& source, ShaderStage stage, ShimTarget t
 
 			const Mapping* mapped = nullptr;
 			for(auto& map : mappings) {
-				if((map.flags & stageFlag) && (map.flags & targetFlag) && isNamed(ident, identLen, map.from)) {
+				if((map.flags & stageFlag) && isNamed(ident, identLen, map.from)) {
 					mapped = &map;
 					break;
 				}
 			}
 
 			bool keyword = false;
-			if(core && !mapped)
+			if(!mapped)
 				for(auto* name : coreKeywords)
 					if(isNamed(ident, identLen, name))
 						keyword = true;
@@ -430,16 +414,9 @@ static bool shimStage(const std::string& source, ShaderStage stage, ShimTarget t
 			else {
 				if(identLen > 3 && strncmp(ident, "gl_", 3) == 0 && strncmp(ident, "gl_Max", 6) != 0) {
 					bool known = false;
-					if(core) {
-						for(auto* name : coreBuiltins)
-							if(isNamed(ident, identLen, name))
-								known = true;
-					}
-					else {
-						for(auto* name : legacyBuiltins)
-							if(isNamed(ident, identLen, name))
-								known = true;
-					}
+					for(auto* name : coreBuiltins)
+						if(isNamed(ident, identLen, name))
+							known = true;
 					if(!known)
 						unsupported.insert(std::string(ident, identLen));
 				}
@@ -458,22 +435,14 @@ static bool shimStage(const std::string& source, ShaderStage stage, ShimTarget t
 	}
 
 	output.clear();
-	switch(target) {
-		case ST_GLSL120:
-			output += "#version 120\n";
-		break;
-		case ST_GLSL410:
-			output += "#version 410 core\n";
-		break;
-	}
+	output += "#version 410 core\n";
 	output += extensions;
 	declare(output, used, stage, target);
-	//GLSL 1.20 numbers the line after "#line N" as N+1, later versions as N
-	output += core ? "#line 1\n" : "#line 0\n";
+	output += "#line 1\n";
 	output += body;
 	if(stage == SS_Fragment)
-		output += alphaTestMain(core ? "sr_FragColor" : "gl_FragColor");
-	else if(core)
+		output += alphaTestMain("sr_FragColor");
+	else
 		output += flipYMain;
 
 	problems.clear();

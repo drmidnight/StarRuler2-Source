@@ -9,10 +9,8 @@ enum ShaderStage {
 };
 
 enum ShimTarget {
-	//GLSL 1.20 with built-in state read from sr_* uniforms and attributes
-	ST_GLSL120,
-	//GLSL 4.10 core, as OpenGL 4.1 core profiles and glslang take it. Fragment
-	//shaders apply the alpha test through sr_AlphaTest and sr_AlphaRef.
+	//GLSL 4.10 core, as glslang takes it before translation. Fragment shaders apply
+	//the alpha test through sr_AlphaTest and sr_AlphaRef.
 	ST_GLSL410,
 };
 
@@ -32,7 +30,7 @@ bool shimShader(const std::string& source, ShaderStage stage, ShimTarget target,
 	std::string& output, std::string& problems);
 
 //Shims both stages of a program. Unlike shimShader, this also handles fragment
-//inputs that the vertex shader never declares, which only GL can link.
+//inputs that the vertex shader never declares, which translation can't link.
 bool shimProgram(const std::string& vertex, const std::string& fragment, ShimTarget target,
 	std::string& vertexOutput, std::string& fragmentOutput, std::string& problems);
 

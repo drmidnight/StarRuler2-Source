@@ -310,6 +310,14 @@ public:
 		}
 	}
 
+	bool applyTextureLoads() override {
+		return applyQueuedLoads();
+	}
+
+	bool hasTextureLoads() const override {
+		return hasQueuedLoads();
+	}
+
 	void presentFrame() override {
 		renderVertexBuffers();
 		target = nullptr;

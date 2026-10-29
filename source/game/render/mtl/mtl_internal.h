@@ -6,6 +6,7 @@
 #include "render/shader_shim.h"
 #include "render/shader_translate.h"
 #include "image.h"
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -27,7 +28,14 @@ const MTLPixelFormat depthFormat = MTLPixelFormatDepth32Float;
 class MetalTexture : public Texture {
 public:
 	id<MTLTexture> texture = nil;
+	~MetalTexture() override;
 };
+
+//Textures made on loader threads are put into use by the render thread, which owns
+//every field of the texture. <apply> runs there, unless the texture is deleted first.
+void queueTextureLoad(MetalTexture* tex, std::function<void()> apply);
+bool applyQueuedLoads();
+bool hasQueuedLoads();
 
 class Texture2D : public MetalTexture {
 	std::vector<bool> activePixels;
@@ -40,6 +48,7 @@ public:
 	void loadPartial(Image& image, const recti& pixels, bool cachePixels, unsigned lod) override;
 	void loadFinish(bool mipmap, unsigned lod) override;
 	void load(Image& image, bool mipmap, bool cachePixels) override;
+	bool loadOffThread(Image& image, bool mipmap, bool cachePixels) override;
 	void save(Image& image) const override;
 	void bind() override {}
 	unsigned getID() const override { return texture ? 1 : 0; }
@@ -56,6 +65,7 @@ public:
 	void loadPartial(Image& image, const recti& pixels, bool cachePixels, unsigned lod) override {}
 	void loadFinish(bool mipmap, unsigned lod) override {}
 	void load(Image& image, bool mipmap, bool cachePixels) override;
+	bool loadOffThread(Image& image, bool mipmap, bool cachePixels) override;
 	void save(Image& image) const override {}
 	void bind() override {}
 	unsigned getID() const override { return texture ? 1 : 0; }

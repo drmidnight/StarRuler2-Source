@@ -1,6 +1,7 @@
 #include "render/mtl/mtl_internal.h"
 #include "main/logging.h"
 #include <algorithm>
+#include <mutex>
 
 namespace render {
 namespace mtl {
@@ -80,6 +81,47 @@ static void generateMipmaps(id<MTLTexture> texture) {
 	[commands commit];
 }
 
+std::mutex loadLock;
+std::vector<std::pair<MetalTexture*, std::function<void()>>> queuedLoads;
+
+void queueTextureLoad(MetalTexture* tex, std::function<void()> apply) {
+	std::lock_guard<std::mutex> lock(loadLock);
+	queuedLoads.emplace_back(tex, std::move(apply));
+}
+
+bool applyQueuedLoads() {
+	decltype(queuedLoads) loads;
+	{
+		std::lock_guard<std::mutex> lock(loadLock);
+		loads.swap(queuedLoads);
+	}
+	for(auto& load : loads)
+		load.second();
+	return !loads.empty();
+}
+
+bool hasQueuedLoads() {
+	std::lock_guard<std::mutex> lock(loadLock);
+	return !queuedLoads.empty();
+}
+
+MetalTexture::~MetalTexture() {
+	std::lock_guard<std::mutex> lock(loadLock);
+	std::erase_if(queuedLoads, [this](auto& load) { return load.first == this; });
+}
+
+static id<MTLTexture> newTexture2D(const Image& image, bool mipmap) {
+	MTLTextureDescriptor* desc = [MTLTextureDescriptor new];
+	desc.textureType = MTLTextureType2D;
+	desc.width = image.width;
+	desc.height = image.height;
+	desc.mipmapLevelCount = mipLevels(image.width, image.height, mipmap);
+	desc.usage = MTLTextureUsageShaderRead;
+	desc.storageMode = MTLStorageModeShared;
+	describeFormat(desc, image.format);
+	return [device newTextureWithDescriptor:desc];
+}
+
 Texture2D::Texture2D() {
 	type = TT_2D;
 	loaded = false;
@@ -96,16 +138,7 @@ void Texture2D::loadStart(Image& image, bool mipmap, bool cachePixels, unsigned 
 	alphaOnly = image.format == FMT_Alpha;
 	if(cachePixels)
 		activePixels.resize(size.x * size.y);
-
-	MTLTextureDescriptor* desc = [MTLTextureDescriptor new];
-	desc.textureType = MTLTextureType2D;
-	desc.width = image.width;
-	desc.height = image.height;
-	desc.mipmapLevelCount = mipLevels(image.width, image.height, mipmap);
-	desc.usage = MTLTextureUsageShaderRead;
-	desc.storageMode = MTLStorageModeShared;
-	describeFormat(desc, image.format);
-	texture = [device newTextureWithDescriptor:desc];
+	texture = newTexture2D(image, mipmap);
 }
 
 void Texture2D::loadPartial(Image& image, const recti& pixels, bool cachePixels, unsigned lod) {
@@ -135,6 +168,35 @@ void Texture2D::load(Image& image, bool mipmap, bool cachePixels) {
 	loadStart(image, mipmap, cachePixels, 0);
 	loadPartial(image, recti(0, 0, image.width, image.height), cachePixels, 0);
 	loadFinish(mipmap, 0);
+}
+
+bool Texture2D::loadOffThread(Image& image, bool mipmap, bool cachePixels) {
+	id<MTLTexture> made = newTexture2D(image, mipmap);
+	upload(made, image, 0, 0, MTLRegionMake2D(0, 0, image.width, image.height), 0, 0);
+	if(mipmap)
+		generateMipmaps(made);
+
+	std::vector<bool> active;
+	if(cachePixels) {
+		active.resize(image.width * image.height);
+		for(unsigned y = 0; y < image.height; ++y)
+			for(unsigned x = 0; x < image.width; ++x)
+				active[y * image.width + x] = image.get(x, y).a != 0;
+	}
+
+	vec2i newSize(image.width, image.height);
+	unsigned depth = ColorDepths[image.format];
+	bool alpha = image.format == FMT_Alpha;
+	queueTextureLoad(this, [this, made, newSize, depth, alpha, mipmap, active = std::move(active)]() mutable {
+		texture = made;
+		size = newSize;
+		pixelDepth = depth;
+		alphaOnly = alpha;
+		hasMipMaps = mipmap;
+		activePixels = std::move(active);
+		loaded = true;
+	});
+	return true;
 }
 
 void Texture2D::save(Image& image) const {
@@ -186,16 +248,13 @@ void Cubemap::loadStart(Image& image, bool mipmap, bool cachePixels, unsigned lo
 		load(image, mipmap, cachePixels);
 }
 
-void Cubemap::load(Image& image, bool mipmap, bool cachePixels) {
-	loaded = false;
+//Makes a cubemap from the cross-shaped image, or nil if it isn't one
+static id<MTLTexture> newCubemap(const Image& image, bool mipmap) {
 	unsigned tile = image.width / 4;
 	if(tile != image.height / 3 || tile == 0) {
 		error("ERROR loading cubemap: Cubemap must have a 4:3 aspect ratio.");
-		return;
+		return nil;
 	}
-
-	size = vec2i(image.width, image.height);
-	pixelDepth = ColorDepths[image.format];
 
 	MTLTextureDescriptor* desc = [MTLTextureDescriptor new];
 	desc.textureType = MTLTextureTypeCube;
@@ -205,18 +264,48 @@ void Cubemap::load(Image& image, bool mipmap, bool cachePixels) {
 	desc.usage = MTLTextureUsageShaderRead;
 	desc.storageMode = MTLStorageModeShared;
 	describeFormat(desc, image.format);
-	texture = [device newTextureWithDescriptor:desc];
+	id<MTLTexture> made = [device newTextureWithDescriptor:desc];
 
 	//Tiles of the cross-shaped image, in Metal's face order: +X, -X, +Y, -Y, +Z, -Z
 	static const unsigned faces[6][2] = {{2,1}, {0,1}, {1,0}, {1,2}, {1,1}, {3,1}};
 	for(unsigned face = 0; face < 6; ++face)
-		upload(texture, image, faces[face][0] * tile, faces[face][1] * tile,
+		upload(made, image, faces[face][0] * tile, faces[face][1] * tile,
 			MTLRegionMake2D(0, 0, tile, tile), 0, face);
 
-	hasMipMaps = mipmap;
 	if(mipmap)
-		generateMipmaps(texture);
+		generateMipmaps(made);
+	return made;
+}
+
+void Cubemap::load(Image& image, bool mipmap, bool cachePixels) {
+	loaded = false;
+	id<MTLTexture> made = newCubemap(image, mipmap);
+	if(!made)
+		return;
+
+	texture = made;
+	size = vec2i(image.width, image.height);
+	pixelDepth = ColorDepths[image.format];
+	hasMipMaps = mipmap;
 	loaded = true;
+}
+
+bool Cubemap::loadOffThread(Image& image, bool mipmap, bool cachePixels) {
+	id<MTLTexture> made = newCubemap(image, mipmap);
+	vec2i newSize(image.width, image.height);
+	unsigned depth = ColorDepths[image.format];
+	queueTextureLoad(this, [this, made, newSize, depth, mipmap] {
+		if(!made) {
+			loaded = false;
+			return;
+		}
+		texture = made;
+		size = newSize;
+		pixelDepth = depth;
+		hasMipMaps = mipmap;
+		loaded = true;
+	});
+	return true;
 }
 
 unsigned Cubemap::getTextureBytes() const {

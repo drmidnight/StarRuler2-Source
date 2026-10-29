@@ -262,19 +262,13 @@ class RootElement : IGuiElement {
 	}
 	
 	bool postMouseEvent(const MouseEvent& event) {	
-		if(Tooltip !is null) {
-			if(Tooltip.persist) {
-				if(event.type == MET_Moved && showTooltipDelay > 0.f)
-					showTooltipDelay = Tooltip.delay;
-			}
-			else {
-				if(showTooltipDelay <= 0.f)
-					Tooltip.hide(skin, Hovered);
-				if(event.type == MET_Moved)
-					showTooltipDelay = Tooltip.delay;
-				else
-					@Tooltip = null;
-			}
+		//Moving within an element keeps its tooltip, and the delay counts from when the
+		//mouse entered it; set_hovered starts it again for a new element. Restarting it on
+		//every move kept tooltips from showing, since trackpads report moves constantly.
+		if(Tooltip !is null && !Tooltip.persist && event.type != MET_Moved) {
+			if(showTooltipDelay <= 0.f)
+				Tooltip.hide(skin, Hovered);
+			@Tooltip = null;
 		}
 
 		if(event.type == MET_Moved)

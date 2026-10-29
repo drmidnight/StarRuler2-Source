@@ -108,12 +108,8 @@ public:
 	double frameTime, gameTime, gameSpeed;
 	//When the frame limiter last let a frame through, which paces the next one
 	double frameDeadline = 0.0;
-	//Swap interval the settings ask for, and the frame time that stands in for it
-	//when the driver's own vertical sync can't keep up with the display
+	//Vertical sync the settings ask for, reapplied when the window changes screens
 	int vsyncFrames = 0;
-	double vsyncInterval_s = 0.0;
-	//Whether the window has an OpenGL context, or another renderer presents into it
-	bool openGL = true;
 
 	GLFWDriver() : window(0), mouseOver(true), canLock(false), shouldLock(false), borderless(false), retinaFramebuffer(true) {
 		glfwSetErrorCallback(glfwError);
@@ -152,26 +148,9 @@ public:
 
 	void setVerticalSync(int waitFrames) {
 		vsyncFrames = waitFrames;
-		vsyncInterval_s = 0.0;
-		if(!openGL) {
-			if(devices.render)
-				devices.render->setVerticalSync(waitFrames);
-			return;
-		}
-#ifdef __APPLE__
-		//OpenGL on macOS presents at no more than 60Hz, even on 120Hz displays, so faster
-		//displays get no swap interval and the frame limiter paces to their refresh instead.
-		//The compositor keeps this from tearing.
-		if(waitFrames != 0 && window) {
-			const GLFWvidmode* mode = glfwGetVideoMode(getWindowMonitor());
-			if(mode && mode->refreshRate > 60) {
-				vsyncInterval_s = (double)abs(waitFrames) / (double)mode->refreshRate;
-				glfwSwapInterval(0);
-				return;
-			}
-		}
-#endif
-		glfwSwapInterval(waitFrames);
+		//The renderer presents its own frames
+		if(devices.render)
+			devices.render->setVerticalSync(waitFrames);
 	}
 
 	//The window may have moved to a display with a different refresh rate
@@ -226,8 +205,6 @@ public:
 	}
 
 	void swapBuffers(double minWait_s) {
-		if(openGL)
-			glfwSwapBuffers(window);
 		glfwPollEvents();
 		readGamepads();
 		if(devices.cloud)
@@ -237,7 +214,7 @@ public:
 		//Frames are paced from the previous deadline rather than from when the wait
 		//ended, so waking late doesn't lower the frame rate; a frame that runs over
 		//starts the pacing again from now.
-		double interval = std::max(minWait_s, vsyncInterval_s);
+		double interval = minWait_s;
 		double curTime = getAccurateTime();
 		double waitTill = frameDeadline + interval;
 		if(waitTill < curTime)
@@ -280,18 +257,9 @@ public:
 	}
 
 	void createWindow(WindowData& data) {
-		openGL = data.openGL;
 		glfwWindowHint(GLFW_REFRESH_RATE, data.refreshRate);
-		if(openGL) {
-			glfwWindowHint(GLFW_SAMPLES, data.aa_samples);
-			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
-			glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-			glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-		}
-		else {
-			glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-		}
+		//The renderer attaches its own layer, so the window gets no GL context
+		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, retinaFramebuffer ? GLFW_TRUE : GLFW_FALSE);
 
 		GLFWmonitor* monitor = nullptr;
@@ -388,9 +356,6 @@ public:
 			error("Could not create window.");
 			return;
 		}
-
-		if(openGL)
-			glfwMakeContextCurrent(window);
 
 		glfwGetWindowSize(window, &win_width, &win_height);
 		updateFramebufferSize();

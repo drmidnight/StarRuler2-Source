@@ -67,15 +67,13 @@ struct WindowData {
 	WindowMode mode;
 	std::string targetMonitor;
 	bool overrideMonitor;
-	//Whether the window gets an OpenGL context; other renderers draw into it themselves
-	bool openGL;
 
 	WindowData()
 	 : width(1024), height(768),
 	 redbits(8), greenbits(8), bluebits(8),
 	 alphabits(8), depthbits(8), stencilbits(8),
 	 aa_samples(4), refreshRate(0), resizable(false),
-	 verticalSync(1), mode(WM_Window), overrideMonitor(false), openGL(true) {}
+	 verticalSync(1), mode(WM_Window), overrideMonitor(false) {}
 };
 
 enum OSCallback {

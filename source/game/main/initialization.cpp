@@ -1023,7 +1023,6 @@ void initMods(const std::vector<std::string>& mods) {
 			if(create_window) {
 				os::WindowData windat;
 				windat.verticalSync = 1;
-				windat.openGL = false;
 				bool cursorCapture = false;
 
 				auto* vsync = devices.settings.engine.getSetting("iVsync");

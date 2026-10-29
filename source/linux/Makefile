@@ -134,6 +134,8 @@ ifdef USE_MACDEPS
 	#Static libraries from source/macos/build_deps.sh
 	CXXFLAGS += -I$(MACDEPS)/include -I$(MACDEPS)/include/freetype2
 	LDFLAGS += -L$(MACDEPS)/lib
+	#The texture cache compresses with astc-encoder, which only the static deps provide
+	CXXFLAGS += -DSR_ASTC
 else
 	#Homebrew lives in /opt/homebrew on arm64 and /usr/local on x86_64
 	BREW = $(shell brew --prefix)
@@ -172,6 +174,7 @@ LDFLAGS += -lvorbis -logg
 LDFLAGS += -lglfw3
 #Shader translation for the Metal renderer
 LDFLAGS += -lglslang -lglslang-default-resource-limits -lspirv-cross-msl -lspirv-cross-glsl -lspirv-cross-core
+LDFLAGS += -lastcenc
 else ifeq ($(UNAME), Darwin)
 LDFLAGS += -lglfw
 endif

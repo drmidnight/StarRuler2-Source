@@ -71,6 +71,17 @@ fetch spirv-cross https://github.com/KhronosGroup/SPIRV-Cross/archive/refs/tags/
 cmake_build spirv-cross -DSPIRV_CROSS_SHARED=OFF -DSPIRV_CROSS_STATIC=ON -DSPIRV_CROSS_CLI=ON \
 	-DSPIRV_CROSS_ENABLE_TESTS=OFF -DSPIRV_CROSS_ENABLE_C_API=OFF
 
+#ASTC texture compression for the texture cache. Its install rules only cover the command
+#line tools, so the static library and header are copied by hand.
+fetch astc-encoder https://github.com/ARM-software/astc-encoder/archive/refs/tags/5.7.0.tar.gz \
+	7c1b28ece59c9c2737e297123a9910c1c548676c7aed87a09d5734e2fa7bdaf0
+cmake -S "$WORK/astc-encoder" -B "$WORK/astc-encoder/_build" "${CMAKE_COMMON[@]}" -DASTCENC_ISA_NEON=ON \
+	-DASTCENC_UNIVERSAL_BUILD=OFF -DASTCENC_CLI=OFF -DASTCENC_WERROR=OFF >/dev/null
+cmake --build "$WORK/astc-encoder/_build" --target astcenc-neon-static -j "$JOBS" >/dev/null
+cp "$(find "$WORK/astc-encoder/_build" -name 'libastcenc-neon-static.a' | head -1)" "$PREFIX/lib/libastcenc.a"
+cp "$WORK/astc-encoder/Source/astcenc.h" "$PREFIX/include/"
+echo "built astc-encoder"
+
 #Only static archives may be found in the prefix, so the linker can never pick a dylib
 find "$PREFIX/lib" -name "*.dylib" -delete
 echo "Dependencies installed to $PREFIX (macOS $MACOSX_DEPLOYMENT_TARGET)"

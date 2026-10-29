@@ -661,9 +661,6 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 		console.render(*devices.render);
 		render::renderVertexBuffers();
 	}
-	else {
-		threads::sleep(1);
-	}
 
 	//Captures read the frame back before it is presented
 	capture::afterRender();
@@ -672,7 +669,11 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 	
 	if(render)
 		devices.render->presentFrame();
-	devices.driver->swapBuffers(maxfps && *maxfps > 0 ? 1.0 / *maxfps : 0.0);
+	//Without a window to draw to, frames still drive the simulation, at up to 60 a second
+	double minFrameTime = maxfps && *maxfps > 0 ? 1.0 / *maxfps : 0.0;
+	if(!render)
+		minFrameTime = std::max(minFrameTime, 1.0 / 60.0);
+	devices.driver->swapBuffers(minFrameTime);
 
 	double present_end = devices.driver->getAccurateTime();
 

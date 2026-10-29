@@ -23,7 +23,7 @@ happened, and attach `~/.starruler2/log.txt` if the game crashed.
   - Dependencies are built as static libraries, so no Homebrew is needed. The dependencies include GLFW 3.4,
     glslang, SPIRV-Cross and astc-encoder.
   - Packaged as an ad-hoc signed .app and disk image, with a dSYM for reading crash logs.
-  - GitHub Actions builds the disk image on every push, and publishes a release for each version tag.
+  - GitHub Actions builds the disk image and publishes a release for each version tag.
   - Thread and address sanitizer builds, Instruments signposts, and threading tests.
 
   Rendering
@@ -121,9 +121,9 @@ astc-encoder as static libraries in `deps/macos`, so the game has no Homebrew de
 `deps/macos` the makefile falls back to Homebrew's libraries, which is fine for running the game
 locally with `StarRuler2.sh`.
 
-GitHub Actions runs the same steps on every push to `master` (`.github/workflows/macos.yml`) and
-keeps the disk image as a build artifact. Pushing a tag starting with `v` also publishes it as a
-release.
+GitHub Actions runs the same steps for every tag starting with `v` (`.github/workflows/macos.yml`)
+and publishes the disk image as a release. Running the workflow by hand from the Actions tab keeps
+the disk image as a build artifact instead.
 
 ## Differences with Commercial Version
 * The music is not part of the open source release of Star Ruler 2. The data/music/ directory from the commercial

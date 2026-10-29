@@ -1,11 +1,10 @@
-#Builds the Apple Silicon app and disk image. Tags starting with v also publish a release.
+#Builds the Apple Silicon app and disk image, and publishes it as a release for tags starting
+#with v. It can also be run by hand from the Actions tab, which keeps the disk image as an artifact.
 name: macOS build
 
 on:
   push:
-    branches: [master]
     tags: ['v*']
-  pull_request:
   workflow_dispatch:
 
 jobs:

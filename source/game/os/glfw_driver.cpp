@@ -847,6 +847,9 @@ void redirectMouseButton(GLFWwindow*, int button, int action, int mods) {
 void redirectMouseMove(GLFWwindow*, double x, double y) {
 	if(capture::active())
 		return;
+	//Trackpads report fractions of a point, so most moves land on the same position
+	if((int)x == driver->mouse_x && (int)y == driver->mouse_y)
+		return;
 	driver->onMouseMoved((int)x, (int)y);
 	driver->mouse_x = (int)x;
 	driver->mouse_y = (int)y;

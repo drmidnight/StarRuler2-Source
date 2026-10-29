@@ -481,6 +481,8 @@ public:
 #endif
 				//The caller may return as soon as this is set, so it comes last
 				retValue->setAsyncReturned();
+				retValue = nullptr;
+				wakeLockWaiters();
 			}
 			return;
 		}
@@ -519,6 +521,8 @@ public:
 			if(retTime) *retTime = devices.driver->getAccurateTime();
 #endif
 			retValue->setAsyncReturned();
+			retValue = nullptr;
+			wakeLockWaiters();
 		}
 		else {
 			method->desc.call(cl);
@@ -531,6 +535,10 @@ public:
 
 	~AsyncScriptCall() {
 		object->drop();
+		//The caller is still waiting if the message was dropped, and returns once it
+		//sees the object is gone
+		if(retValue)
+			wakeLockWaiters();
 	}
 };
 
@@ -660,25 +668,24 @@ static GenericValue wrapperFunc(void* arg, GenericCallData& args) {
 						)
 					);
 
-					//Attempt to process the message immediately where possible (typically the GUI, which needs the fast response)
-					const unsigned ASYNC_SPIN_COUNT = 24;
 					const unsigned FAST_SPIN_COUNT = 2500;
 
 					if(!activeGroup) {
-						unsigned spins = ASYNC_SPIN_COUNT;
+						//Process the message here when the group is free (typically the GUI, which
+						//needs the fast response). Otherwise whoever holds the group handles it, or
+						//the message job queued when they unlock it, so sleep until the reply.
 						while(!retVal.isAsyncReturned()) {
+							unsigned seen = lockWakeSerial();
 							if(!obj->lockGroup->hasLock())
 								tickLockMessages(obj->lockGroup);
 							else
 								tickRandomMessages(1);
 
-							if(--spins == 0) {
-								threads::sleep(0);
-								if(!obj->isValid())
-									return retVal;
-								spins = ASYNC_SPIN_COUNT;
-								continue;
-							}
+							if(retVal.isAsyncReturned())
+								break;
+							if(!obj->isValid())
+								return retVal;
+							waitForLockWake(seen);
 						}
 					}
 					else {
@@ -691,18 +698,23 @@ static GenericValue wrapperFunc(void* arg, GenericCallData& args) {
 						}
 
 						//Slow path: Perhaps it can't be resolved, or will take a lot longer than we'd like
-						// This can involve a lot of other messages taking a very long time to return
+						// This can involve a lot of other messages taking a very long time to return.
+						// The reply can depend on messages to our own group, so handle those while waiting.
 						while(!retVal.isAsyncReturned()) {
 #ifdef LOG_SLOW_ASYNC_CALLS
 							wasFast = false;
 #endif
-							if(activeGroup->hasMessages())
+							unsigned seen = lockWakeSerial();
+							if(activeGroup->hasMessages()) {
 								activeGroup->processMessages(1);
-							else
-								threads::sleep(0);
+								continue;
+							}
 
+							if(retVal.isAsyncReturned())
+								break;
 							if(!obj->isValid())
 								return retVal;
+							waitForLockWake(seen);
 						}
 					}
 

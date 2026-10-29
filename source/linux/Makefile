@@ -289,6 +289,7 @@ SOURCES = \
 	resource/load_shader.cpp \
 	resource/load_skin.cpp \
 	resource/load_sound.cpp \
+	resource/texture_cache.cpp \
 	resource/locale.cpp \
 	resource/hot_loading.cpp \
 	\

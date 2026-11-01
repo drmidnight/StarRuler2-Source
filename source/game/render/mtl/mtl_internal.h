@@ -90,8 +90,11 @@ public:
 class RenderTarget : public MetalTexture {
 public:
 	DepthTexture depth;
+	//With more than one sample, passes draw into these and resolve into texture and depth
+	unsigned samples = 1;
+	id<MTLTexture> msaaColor = nil, msaaDepth = nil;
 
-	RenderTarget(const vec2i& size);
+	RenderTarget(const vec2i& size, unsigned samples = 1);
 
 	Texture* getDepthTexture() const override { return const_cast<DepthTexture*>(&depth); }
 	bool isPixelActive(vec2i px) const override { return true; }
@@ -102,7 +105,7 @@ public:
 	void save(Image& image) const override;
 	void bind() override {}
 	unsigned getID() const override { return texture ? 1 : 0; }
-	unsigned getTextureBytes() const override { return size.width * size.height * 8; }
+	unsigned getTextureBytes() const override { return size.width * size.height * 8 * (samples > 1 ? samples + 1 : 1); }
 };
 
 //Which vertex data a shader input reads

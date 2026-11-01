@@ -359,7 +359,7 @@ unsigned Cubemap::getTextureBytes() const {
 	return bytes;
 }
 
-RenderTarget::RenderTarget(const vec2i& Size) {
+RenderTarget::RenderTarget(const vec2i& Size, unsigned Samples) {
 	type = TT_2D;
 	size = Size;
 	loaded = true;
@@ -377,6 +377,20 @@ RenderTarget::RenderTarget(const vec2i& Size) {
 	depth.size = size;
 	depth.loaded = true;
 	depth.hasMipMaps = false;
+
+	while(Samples > 1 && ![device supportsTextureSampleCount:Samples])
+		Samples /= 2;
+	samples = std::max(1u, Samples);
+	if(samples > 1) {
+		//Kept between passes, since the scene is drawn over several of them
+		desc.textureType = MTLTextureType2DMultisample;
+		desc.sampleCount = samples;
+		desc.usage = MTLTextureUsageRenderTarget;
+		desc.pixelFormat = colorFormat;
+		msaaColor = [device newTextureWithDescriptor:desc];
+		desc.pixelFormat = depthFormat;
+		msaaDepth = [device newTextureWithDescriptor:desc];
+	}
 }
 
 void RenderTarget::save(Image& image) const {

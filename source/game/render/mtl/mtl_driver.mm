@@ -114,6 +114,8 @@ public:
 	id<CAMetalDrawable> drawable = nil;
 	id<MTLTexture> screenDepth = nil;
 	id<MTLRenderCommandEncoder> encoder = nil;
+	//Samples per pixel in the open pass, which pipelines must match
+	unsigned passSamples = 1;
 
 	//What the open encoder has bound, so draws only send what changed
 	struct EncoderState {
@@ -289,6 +291,18 @@ public:
 		pass.depthAttachment.loadAction = clearDepth ? MTLLoadActionClear : MTLLoadActionLoad;
 		pass.depthAttachment.clearDepth = 1.0;
 		pass.depthAttachment.storeAction = MTLStoreActionStore;
+		passSamples = 1;
+		if(target && target->samples > 1) {
+			//Samples stay for the next pass, and every pass resolves, so the target can be
+			//read whenever drawing moves elsewhere. The resolved depth feeds post-processing.
+			pass.colorAttachments[0].texture = target->msaaColor;
+			pass.colorAttachments[0].resolveTexture = color;
+			pass.colorAttachments[0].storeAction = MTLStoreActionStoreAndMultisampleResolve;
+			pass.depthAttachment.texture = target->msaaDepth;
+			pass.depthAttachment.resolveTexture = depth;
+			pass.depthAttachment.storeAction = MTLStoreActionStoreAndMultisampleResolve;
+			passSamples = target->samples;
+		}
 		encoder = [commandBuffer renderCommandEncoderWithDescriptor:pass];
 		encoder.label = target ? @"Render target" : @"Screen";
 		clearColor = clearDepth = false;
@@ -659,7 +673,7 @@ public:
 	}
 
 	id<MTLRenderPipelineState> pipelineFor(ShaderProgram* program, unsigned layout) {
-		unsigned key = activeRenderState.baseMat | (intermediateBlend ? 8 : 0) | (layout << 4);
+		unsigned key = activeRenderState.baseMat | (intermediateBlend ? 8 : 0) | (layout << 4) | (passSamples << 8);
 		auto it = program->pipelines.find(key);
 		if(it != program->pipelines.end())
 			return it->second;
@@ -694,6 +708,7 @@ public:
 		desc.colorAttachments[0].pixelFormat = colorFormat;
 		describeBlend(desc.colorAttachments[0], activeRenderState.baseMat, intermediateBlend);
 		desc.depthAttachmentPixelFormat = depthFormat;
+		desc.rasterSampleCount = passSamples;
 
 		NSError* err = nil;
 		id<MTLRenderPipelineState> pipeline = [device newRenderPipelineStateWithDescriptor:desc error:&err];
@@ -936,8 +951,8 @@ public:
 		return tex;
 	}
 
-	Texture* createRenderTarget(const vec2i& size) override {
-		return new RenderTarget(size);
+	Texture* createRenderTarget(const vec2i& size, unsigned samples) override {
+		return new RenderTarget(size, samples);
 	}
 };
 

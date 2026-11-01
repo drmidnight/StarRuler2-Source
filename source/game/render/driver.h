@@ -97,7 +97,9 @@ public:
 	static Texture* createTexture();
 	static Texture* createCubemap();
 
-	virtual Texture* createRenderTarget(const vec2i& size) = 0;
+	//A target with <samples> above 1 is multisampled, and resolves when each pass ends.
+	//Drivers lower the count to the most the GPU supports.
+	virtual Texture* createRenderTarget(const vec2i& size, unsigned samples = 1) = 0;
 	virtual void setRenderTarget(Texture* texture, bool intermediate = false) = 0;
 
 	virtual Image* getScreen(int x, int y, int w, int h) = 0;

@@ -422,6 +422,7 @@ void tickGuiReload() {
 }
 
 static render::Texture* renderTarget = nullptr;
+static unsigned renderTargetSamples = 1;
 void getFrameRender(Image& img) {
 	if(!game_running || !devices.scripts.client)
 		return;
@@ -454,12 +455,18 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 	vec2i screenSize(devices.driver->win_width,devices.driver->win_height);
 	bool render = screenSize.width != 0 && screenSize.height != 0;
 
+	//Antialiasing samples for the 3D scene, which the options can change at any time
+	auto* samplesSetting = devices.settings.engine.getSetting("iSamples");
+	unsigned samples = samplesSetting ? (unsigned)std::max(1, samplesSetting->getInteger()) : 1;
+
 	if(render) {
-		if(!renderTarget)
-			renderTarget = devices.render->createRenderTarget(screenSize * scale_3d);
-		if(renderTarget->size != screenSize * scale_3d) {
+		if(renderTarget && (renderTarget->size != screenSize * scale_3d || samples != renderTargetSamples)) {
 			delete renderTarget;
-			renderTarget = devices.render->createRenderTarget(screenSize * scale_3d);
+			renderTarget = nullptr;
+		}
+		if(!renderTarget) {
+			renderTarget = devices.render->createRenderTarget(screenSize * scale_3d, samples);
+			renderTargetSamples = samples;
 		}
 	}
 
@@ -488,7 +495,8 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 	const render::Shader* shad = nullptr;
 	//The scene renders at the window's size in points, then scales up to the framebuffer
 	bool scaled = scale_3d != 1.0 || devices.driver->fb_width != screenSize.width || devices.driver->fb_height != screenSize.height;
-	if(fsShader || scaled) {
+	//Multisampled drawing happens in the render target, and resolves when it's drawn to the screen
+	if(fsShader || scaled || samples > 1) {
 		rt = renderTarget;
 		shad = fsShader;
 	}

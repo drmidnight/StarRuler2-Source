@@ -119,6 +119,8 @@ public:
 	//Vertical sync for drivers that present their own frames: 0 is off, otherwise
 	//the number of display refreshes per frame
 	virtual void setVerticalSync(int frames) {}
+	//The most anisotropic samples for mipmapped textures, 1 for plain trilinear filtering
+	virtual void setAnisotropy(unsigned samples) {}
 
 	virtual void drawFPSGraph(const recti& location) = 0;
 

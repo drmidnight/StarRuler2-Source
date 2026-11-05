@@ -162,6 +162,7 @@ public:
 	float* shaderUniforms = nullptr;
 
 	int verticalSync = 1;
+	unsigned anisotropy = 1;
 
 	Driver() {
 		frameSlots = dispatch_semaphore_create(framesInFlight);
@@ -322,6 +323,20 @@ public:
 			[encoder endEncoding];
 			encoder = nil;
 		}
+	}
+
+	void setAnisotropy(unsigned samples) override {
+		samples = std::clamp(samples, 1u, 16u);
+		if(samples == anisotropy)
+			return;
+		anisotropy = samples;
+		//Samplers are made again on demand, and every texture unit picks its new one up
+		samplers.clear();
+		for(unsigned i = 0; i < RENDER_MAX_TEXTURES; ++i) {
+			boundSamplers[i] = nil;
+			activeRenderState.textures[i] = nullptr;
+		}
+		pLastRenderState = nullptr;
 	}
 
 	bool applyTextureLoads() override {
@@ -545,6 +560,9 @@ public:
 		desc.magFilter = state.filterMag == TF_Nearest ? MTLSamplerMinMagFilterNearest : MTLSamplerMinMagFilterLinear;
 		if(mipmaps)
 			desc.mipFilter = state.filterMin == TF_Nearest ? MTLSamplerMipFilterNearest : MTLSamplerMipFilterLinear;
+		//Sharper textures at grazing angles, for textures with mip levels to sample
+		if(mipmaps && state.filterMin != TF_Nearest)
+			desc.maxAnisotropy = anisotropy;
 		id<MTLSamplerState> sampler = [device newSamplerStateWithDescriptor:desc];
 		samplers[key] = sampler;
 		return sampler;

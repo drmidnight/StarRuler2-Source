@@ -458,6 +458,8 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 	//Antialiasing samples for the 3D scene, which the options can change at any time
 	auto* samplesSetting = devices.settings.engine.getSetting("iSamples");
 	unsigned samples = samplesSetting ? (unsigned)std::max(1, samplesSetting->getInteger()) : 1;
+	auto* anisotropySetting = devices.settings.engine.getSetting("iAnisotropy");
+	devices.render->setAnisotropy(anisotropySetting ? (unsigned)std::max(1, anisotropySetting->getInteger()) : 1);
 
 	if(render) {
 		if(renderTarget && (renderTarget->size != screenSize * scale_3d || samples != renderTargetSamples)) {

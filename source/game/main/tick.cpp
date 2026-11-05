@@ -461,13 +461,20 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 	auto* anisotropySetting = devices.settings.engine.getSetting("iAnisotropy");
 	devices.render->setAnisotropy(anisotropySetting ? (unsigned)std::max(1, anisotropySetting->getInteger()) : 1);
 
+	//The 3D scene renders at the framebuffer's pixels, or at the window's points to draw
+	//a quarter of the pixels on a Retina screen, then scale_3d supersamples it
+	auto* nativeSetting = devices.settings.engine.getSetting("bNative3D");
+	bool native3D = !nativeSetting || nativeSetting->getBool();
+	vec2i fbSize(devices.driver->fb_width, devices.driver->fb_height);
+	vec2i sceneSize = vec2i(vec2d(native3D && fbSize.width > 0 ? fbSize : screenSize) * scale_3d);
+
 	if(render) {
-		if(renderTarget && (renderTarget->size != screenSize * scale_3d || samples != renderTargetSamples)) {
+		if(renderTarget && (renderTarget->size != sceneSize || samples != renderTargetSamples)) {
 			delete renderTarget;
 			renderTarget = nullptr;
 		}
 		if(!renderTarget) {
-			renderTarget = devices.render->createRenderTarget(screenSize * scale_3d, samples);
+			renderTarget = devices.render->createRenderTarget(sceneSize, samples);
 			renderTargetSamples = samples;
 		}
 	}
@@ -495,8 +502,8 @@ void renderFrame(scripts::Manager* uiScript, scripts::Manager* renderScript) {
 
 	render::Texture* rt = nullptr;
 	const render::Shader* shad = nullptr;
-	//The scene renders at the window's size in points, then scales up to the framebuffer
-	bool scaled = scale_3d != 1.0 || devices.driver->fb_width != screenSize.width || devices.driver->fb_height != screenSize.height;
+	//A scene at another size than the framebuffer is drawn there scaled
+	bool scaled = sceneSize != fbSize;
 	//Multisampled drawing happens in the render target, and resolves when it's drawn to the screen
 	if(fsShader || scaled || samples > 1) {
 		rt = renderTarget;

@@ -1649,6 +1649,7 @@ void loadEngineSettings() {
 		cat->settings.push_back(new NamedGeneric("iSamples", 4));
 		cat->settings.push_back(new NamedGeneric("bSupersample", false));
 		cat->settings.push_back(new NamedGeneric("iAnisotropy", 8));
+		cat->settings.push_back(new NamedGeneric("bNative3D", true));
 		cat->settings.push_back(new NamedGeneric("iRefreshRate", (int)0));
 		cat->settings.push_back(new NamedGeneric("iResolutionX", 1280));
 		cat->settings.push_back(new NamedGeneric("iResolutionY", 720));

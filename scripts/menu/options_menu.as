@@ -378,7 +378,7 @@ class GuiVsyncOption : GuiDropdownOption, EngineOption {
 	}
 };
 
-//Which graphics API draws the game; takes effect on the next start
+//Multisampling, or supersampling the 3D scene at twice the size
 class GuiAAOption : GuiDropdownOption, EngineOption {
 	GuiAAOption(BaseGuiElement@ parent, const recti& pos) {
 		super(parent, pos, locale::ANTIALIASING);
@@ -533,6 +533,26 @@ class GraphicsOptions : OptionsBox {
 		y += 32;
 		options.insertLast(GuiAAOption(
 			panel, recti_area(8, y, 550, 32)));
+
+		y += 32;
+		{
+			GuiEngineDropdown filtering(
+				panel, recti_area(8, y,  550, 32),
+				locale::OPT_TEX_FILTERING, "iAnisotropy");
+			filtering.addItem(locale::TEX_FILTER_TRILINEAR, 1);
+			filtering.addItem(locale::TEX_FILTER_2X, 2);
+			filtering.addItem(locale::TEX_FILTER_4X, 4);
+			filtering.addItem(locale::TEX_FILTER_8X, 8);
+			filtering.addItem(locale::TEX_FILTER_16X, 16);
+			filtering.reset();
+			options.insertLast(filtering);
+		}
+
+		y += 32;
+		options.insertLast(GuiEngineToggle(
+			panel, recti_area(20, y,  530, 26),
+			locale::OPT_NATIVE_3D, "bNative3D"
+		));
 		
 		y += 32;
 		options.insertLast(GuiVsyncOption(
